@@ -22,7 +22,18 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # ----------------------------------------------------------------------
-# Gemini API key configuration (for both text and images)
+# Portable home directory (works on Windows and Linux)
+# ----------------------------------------------------------------------
+def get_user_home():
+    if os.name == 'nt':
+        return os.environ.get("USERPROFILE", os.path.expanduser("~"))
+    else:
+        return os.environ.get("HOME", os.path.expanduser("~"))
+
+USER_HOME = get_user_home()
+
+# ----------------------------------------------------------------------
+# Gemini API key configuration
 # ----------------------------------------------------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 if not GEMINI_API_KEY:
@@ -32,7 +43,6 @@ else:
 
 # Gemini text generation (replaces Qwen)
 def ask_gemini(prompt, model="gemini-2.5-flash", use_cache=True):
-    """Call Gemini API for text generation."""
     if not GEMINI_API_KEY:
         return "Error: Gemini API key not set.", None
     if use_cache:
@@ -69,9 +79,9 @@ def ask_gemini_stream(prompt, model="gemini-2.5-flash"):
 _gemini_cache = {}
 
 # ----------------------------------------------------------------------
-# ChromaDB persistent memory
+# ChromaDB persistent memory (using user home)
 # ----------------------------------------------------------------------
-CHROMA_PATH = os.path.join(os.environ["USERPROFILE"], ".qwen_studio_memory")
+CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
@@ -157,9 +167,10 @@ def clean_html(raw):
     return raw.strip()
 
 def save_file(content, filename, directory="Desktop"):
-    base = os.path.join(os.environ["USERPROFILE"], directory)
-    os.makedirs(base, exist_ok=True)
-    path = os.path.join(base, filename)
+    # In cloud, save to a local data folder instead of Desktop
+    if not os.path.exists("data"):
+        os.makedirs("data")
+    path = os.path.join("data", filename)
     if isinstance(content, bytes):
         with open(path, "wb") as f:
             f.write(content)
@@ -278,8 +289,8 @@ def generate_app(description, language, filename_base, model="gemini-2.5-flash")
     return result, token_info
 
 def clone_website(url, output_dir, progress_callback=None):
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
-    clone_root = os.path.join(desktop, output_dir)
+    # Simplified for cloud: save to a local folder
+    clone_root = os.path.join("data", output_dir)
     os.makedirs(clone_root, exist_ok=True)
     url_to_local = {}
     with sync_playwright() as p:
@@ -338,7 +349,7 @@ def clone_website(url, output_dir, progress_callback=None):
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(html)
         browser.close()
-    webbrowser.open(f"file://{index_path}")
+    # No webbrowser.open in cloud
     store_memory(url, "website_clone", f"Cloned to {clone_root}")
     return index_path, clone_root
 
@@ -484,8 +495,8 @@ def route_clone():
 
 @app.route("/preview/<clone_folder>/<path:filename>")
 def serve_clone(clone_folder, filename):
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
-    clone_path = os.path.join(desktop, clone_folder)
+    # For cloud, serve from data folder
+    clone_path = os.path.join("data", clone_folder)
     if not os.path.exists(clone_path):
         return "Clone folder not found", 404
     if '..' in filename or filename.startswith('/'):
@@ -494,80 +505,16 @@ def serve_clone(clone_folder, filename):
 
 @app.route("/open_file_cleaner", methods=["POST"])
 def open_file_cleaner():
-    possible_paths = [
-        r"C:\Users\dgubs\Downloads\windows_czkawka_gui_gtk_412\czkawka_gui.exe",
-        os.path.join(os.environ["USERPROFILE"], "Desktop", "czkawka", "czkawka_gui.exe"),
-        os.path.join(os.environ["USERPROFILE"], "Desktop", "czkawka", "czkawka_cli.exe"),
-        "C:\\Program Files\\czkawka\\czkawka_gui.exe",
-        "C:\\Program Files (x86)\\czkawka\\czkawka_gui.exe"
-    ]
-    executable = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            executable = path
-            break
-    if not executable:
-        return jsonify({"error": "Czkawka not found. Please download it from https://github.com/qarmin/czkawka/releases"})
-    try:
-        subprocess.Popen([executable], shell=True)
-        return jsonify({"status": "success", "message": f"Launched {executable}"})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    return jsonify({"error": "File cleaner not available in cloud version"})
 
 @app.route("/backup_memory", methods=["POST"])
 def backup_memory():
-    try:
-        backup_dir = os.path.join(os.environ["USERPROFILE"], "Desktop", "qwen_backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        backup_name = f"qwen_memory_backup_{timestamp}.zip"
-        backup_path = os.path.join(backup_dir, backup_name)
-        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(CHROMA_PATH):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, os.path.dirname(CHROMA_PATH))
-                    zipf.write(file_path, arcname)
-        return jsonify({"status": "success", "path": backup_path})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Not implemented in cloud – return error
+    return jsonify({"error": "Backup not available in cloud version"}), 501
 
 @app.route("/restore_memory", methods=["POST"])
 def restore_memory():
-    import tempfile
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
-    if not file.filename.endswith('.zip'):
-        return jsonify({"error": "File must be a .zip backup"}), 400
-    temp_dir = tempfile.mkdtemp()
-    try:
-        zip_path = os.path.join(temp_dir, "backup.zip")
-        file.save(zip_path)
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-        backup_folder = None
-        for root, dirs, files in os.walk(temp_dir):
-            if '.qwen_studio_memory' in dirs:
-                backup_folder = os.path.join(root, '.qwen_studio_memory')
-                break
-        if not backup_folder:
-            for root, dirs, files in os.walk(temp_dir):
-                if 'chroma.sqlite3' in files:
-                    backup_folder = root
-                    break
-        if not backup_folder:
-            return jsonify({"error": "Invalid backup: no ChromaDB folder found"}), 400
-        if os.path.exists(CHROMA_PATH):
-            shutil.rmtree(CHROMA_PATH)
-        shutil.copytree(backup_folder, CHROMA_PATH)
-        return jsonify({"status": "success", "message": "Memory restored. Please restart the dashboard to ensure consistency."})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    return jsonify({"error": "Restore not available in cloud version"}), 501
 
 @app.route("/list_memories", methods=["GET"])
 def list_memories():
@@ -887,8 +834,7 @@ def route_gemini_image():
                 img_data = part.inline_data.data
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 filename = f"gemini_image_{timestamp}.png"
-                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-                save_path = os.path.join(desktop, filename)
+                save_path = os.path.join("data", filename)
                 with open(save_path, "wb") as f:
                     f.write(img_data)
                 return jsonify({"path": save_path, "status": "success"})
