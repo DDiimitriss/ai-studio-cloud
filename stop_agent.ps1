@@ -1,0 +1,1 @@
+Get-Process python, ollama -ErrorAction SilentlyContinue | Stop-Process -Force
