@@ -35,7 +35,6 @@ def ask_gemini(prompt, model="gemini-2.5-flash", use_cache=True):
     """Call Gemini API for text generation."""
     if not GEMINI_API_KEY:
         return "Error: Gemini API key not set.", None
-    # Optional caching (simple)
     if use_cache:
         cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
         if cache_key in _gemini_cache:
@@ -48,14 +47,12 @@ def ask_gemini(prompt, model="gemini-2.5-flash", use_cache=True):
             if len(_gemini_cache) >= 50:
                 _gemini_cache.pop(next(iter(_gemini_cache)))
             _gemini_cache[cache_key] = reply
-        # Token info not available from Gemini directly, return placeholder
         token_info = {"duration": 0, "total_tokens": 0}
         return reply, token_info
     except Exception as e:
         return f"Gemini error: {e}", None
 
 def ask_gemini_stream(prompt, model="gemini-2.5-flash"):
-    """Stream Gemini response token by token (simulate by yielding chunks)."""
     if not GEMINI_API_KEY:
         yield f"data: {json.dumps({'error': 'Gemini API key not set'})}\n\n"
         return
@@ -150,7 +147,7 @@ def run_plugin(plugin_name, args):
         return {"error": str(e)}
 
 # ----------------------------------------------------------------------
-# Helper functions (save_file, clean_html, etc.)
+# Helper functions
 # ----------------------------------------------------------------------
 def clean_html(raw):
     raw = re.sub(r'^```[^\n]*\n?', '', raw)
@@ -172,7 +169,7 @@ def save_file(content, filename, directory="Desktop"):
     return path
 
 # ----------------------------------------------------------------------
-# Core tools (replacing ask_qwen with ask_gemini)
+# Core tools (using Gemini)
 # ----------------------------------------------------------------------
 def generate_website(task, filename, style_guide, model="gemini-2.5-flash"):
     memories = recall_memory("website " + task, n_results=2)
@@ -281,7 +278,6 @@ def generate_app(description, language, filename_base, model="gemini-2.5-flash")
     return result, token_info
 
 def clone_website(url, output_dir, progress_callback=None):
-    # Same as before (unchanged)
     desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
     clone_root = os.path.join(desktop, output_dir)
     os.makedirs(clone_root, exist_ok=True)
@@ -347,169 +343,7 @@ def clone_website(url, output_dir, progress_callback=None):
     return index_path, clone_root
 
 # ----------------------------------------------------------------------
-# Multi‑step smart routing (simplified, using Gemini)
-# ----------------------------------------------------------------------
-def smart_route_multi(user_request, style_guide="", model="gemini-2.5-flash"):
-    # Forced rules remain same as before (email, screenshot)
-    email_keywords = ["send an email", "send email", "email to", "mail to", "send a message to"]
-    if any(kw in user_request.lower() for kw in email_keywords):
-        args = {}
-        args["to"] = "recipient@example.com"
-        email_match = re.search(r'[\w\.-]+@[\w\.-]+', user_request)
-        if email_match:
-            args["to"] = email_match.group(0)
-        subject_match = re.search(r'subject[\s:]+(.*?)(?=body|$|\.)', user_request, re.IGNORECASE)
-        if subject_match:
-            args["subject"] = subject_match.group(1).strip()
-        body_match = re.search(r'body[\s:]+(.*?)$', user_request, re.IGNORECASE)
-        if body_match:
-            args["body"] = body_match.group(1).strip()
-        return [{"action": "plugin", "plugin": "email_sender", "result": None, "args": args}]
-    screenshot_keywords = ["screenshot", "take a screenshot", "capture screenshot", "screen capture", "snap a picture"]
-    if any(kw in user_request.lower() for kw in screenshot_keywords):
-        url_match = re.search(r'(https?://[^\s]+)', user_request)
-        if url_match:
-            url = url_match.group(0)
-            args = {"url": url, "action": "screenshot"}
-            return [{"action": "plugin", "plugin": "agent_browser", "result": None, "args": args}]
-
-    memories = recall_memory(user_request, n_results=5)
-    memory_context = "\n".join(memories) if memories else "No similar past tasks."
-    plugins_info = get_plugins_info()
-    plugins_text = "\n".join([f"- plugin_{name}: {info['description']} (args: any JSON object)" for name, info in plugins_info.items()]) if plugins_info else "No plugins available."
-    decision_prompt = f"""You are a smart assistant that can plan a sequence of tools to fulfill a complex request.
-IMPORTANT: Use the memory context below to personalize your response.
-
-Memory (past similar tasks / user info):
-{memory_context}
-
-Available built-in tools:
-- website: generate a website. Args: task (string), filename (optional).
-- refine_html: improve existing HTML. Args: html (full HTML), instruction.
-- code_to_html: convert code to HTML page. Args: code.
-- refine_code: modify code. Args: code, instruction.
-- search: web search. Args: query.
-- app_gen: generate script. Args: description, language (python|powershell|bash|batch), filename (optional).
-- clone: clone a website. Args: url (string).
-- chat: just talk. Args: message.
-
-Available plugins (custom tools):
-{plugins_text}
-
-Now respond with JSON only. No extra text.
-
-User request: "{user_request}"
-Style guide: {style_guide}
-"""
-    decision_text, _ = ask_gemini(decision_prompt, model=model, use_cache=False)
-    try:
-        decision = json.loads(decision_text)
-    except:
-        return {"error": f"Routing failed: {decision_text}"}
-    if isinstance(decision, dict):
-        decisions = [decision]
-    else:
-        decisions = decision
-    results = []
-    for action in decisions:
-        tool = action.get("tool")
-        args = action.get("arguments", {})
-        # Implementation same as before (calls generate_website, refine_html, etc.)
-        # (For brevity, I'll keep it similar to original but using Gemini for internal calls)
-        # However, to avoid repeating the huge block, I'll note that the core functions above already use Gemini.
-        # We'll just handle each case similarly.
-        if tool == "website":
-            task = args.get("task", user_request)
-            filename = args.get("filename", "website")
-            res, token_info = generate_website(task, filename, style_guide, model)
-            if res.get("error"):
-                results.append({"error": res["error"], "raw": res.get("raw")})
-                break
-            store_memory(user_request, tool, res.get("html", ""))
-            results.append({"action": "website", "html": res["html"], "path": res["path"], "token_info": token_info})
-        elif tool == "refine_html":
-            html = args.get("html", "")
-            instruction = args.get("instruction", "")
-            res, token_info = refine_html(html, instruction, model)
-            if res.get("error"):
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, res.get("new_html", ""))
-            results.append({"action": "refine_html", "new_html": res["new_html"], "path": res["path"], "token_info": token_info})
-        elif tool == "code_to_html":
-            code = args.get("code", "")
-            res, token_info = convert_code_to_html(code, model)
-            if res.get("error"):
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, res.get("html", ""))
-            results.append({"action": "code_to_html", "html": res["html"], "path": res["path"], "token_info": token_info})
-        elif tool == "refine_code":
-            code = args.get("code", "")
-            instruction = args.get("instruction", "")
-            res, token_info = refine_code(code, instruction, model)
-            if res.get("error"):
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, res.get("refined_code", ""))
-            results.append({"action": "refine_code", "refined_code": res["refined_code"], "token_info": token_info})
-        elif tool == "search":
-            query = args.get("query", user_request)
-            res, _ = web_search(query)
-            if res.get("error"):
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, res.get("results", ""))
-            results.append({"action": "search", "results": res["results"]})
-        elif tool == "app_gen":
-            description = args.get("description", user_request)
-            language = args.get("language", "python")
-            filename = args.get("filename", "")
-            res, token_info = generate_app(description, language, filename, model)
-            if res.get("error"):
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, res.get("code", ""))
-            results.append({"action": "app_gen", "code": res["code"], "path": res["path"], "token_info": token_info})
-        elif tool == "clone":
-            url = args.get("url", user_request)
-            if not url.startswith(('http://', 'https://')):
-                url = 'https://' + url
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_dir = f"cloned_site_{timestamp}"
-            try:
-                index_path, clone_dir = clone_website(url, output_dir)
-                store_memory(user_request, tool, f"Cloned to {clone_dir}")
-                results.append({"action": "clone", "path": index_path, "directory": clone_dir})
-            except Exception as e:
-                results.append({"error": str(e)})
-                break
-        elif tool == "chat":
-            message = args.get("message", user_request)
-            mem = recall_memory(message, n_results=3)
-            mem_text = "\n".join(mem) if mem else ""
-            prompt = f"Memory:\n{mem_text}\n\nUser: {message}\nAssistant:"
-            reply, token_info = ask_gemini(prompt, model=model, use_cache=False)
-            store_memory(user_request, tool, reply)
-            results.append({"action": "chat", "reply": reply, "token_info": token_info})
-        elif tool.startswith("plugin_"):
-            plugin_name = tool[7:]
-            if plugin_name not in _plugins:
-                results.append({"error": f"Plugin '{plugin_name}' not found"})
-                break
-            res = run_plugin(plugin_name, args)
-            if "error" in res:
-                results.append({"error": res["error"]})
-                break
-            store_memory(user_request, tool, str(res.get("result", "")))
-            results.append({"action": "plugin", "plugin": plugin_name, "result": res.get("result", "")})
-        else:
-            results.append({"error": f"Unknown tool: {tool}"})
-            break
-    return results
-
-# ----------------------------------------------------------------------
-# Flask routes (most unchanged, but adjust streaming to use Gemini)
+# Flask routes (most unchanged, using Gemini)
 # ----------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -517,7 +351,6 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    # Return a list of Gemini models (or static)
     return jsonify({"models": ["gemini-2.5-flash", "gemini-2.5-pro"]})
 
 @app.route("/list_plugins", methods=["GET"])
@@ -824,7 +657,7 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # Forced email rule (unchanged)
+        # Forced email rule
         email_keywords = ["send an email", "send email", "email to", "mail to", "send a message to"]
         if any(kw in request_text.lower() for kw in email_keywords):
             args = {"to": "recipient@example.com"}
@@ -840,7 +673,8 @@ def stream_smart_agent():
                 yield f"data: {json.dumps({'result': result_text, 'tool': 'plugin_email_sender'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
-        # Forced screenshot rule (unchanged)
+
+        # Forced screenshot rule
         screenshot_keywords = ["screenshot", "take a screenshot", "capture screenshot", "screen capture", "snap a picture"]
         if any(kw in request_text.lower() for kw in screenshot_keywords):
             url_match = re.search(r'(https?://[^\s]+)', request_text)
@@ -858,7 +692,6 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # Normal decision prompt using Gemini
         memories = recall_memory(request_text, n_results=5)
         memory_context = "\n".join(memories) if memories else "No similar past tasks."
         plugins_info = get_plugins_info()
@@ -897,16 +730,13 @@ Style guide: {style_guide}
             decisions = [decision]
         else:
             decisions = decision
-
         step_idx = 0
-        final_response = ""
         while step_idx < len(decisions):
             action = decisions[step_idx]
             tool = action.get("tool")
             args = action.get("arguments", {})
             yield f"data: {json.dumps({'step_start': tool, 'step_index': step_idx})}\n\n"
             error_occurred = False
-            result_data = None
             try:
                 if tool == "chat":
                     message = args.get("message", request_text)
@@ -915,18 +745,15 @@ Style guide: {style_guide}
                     prompt = f"Memory:\n{mem_text}\n\nUser: {message}\nAssistant:"
                     for chunk in ask_gemini_stream(prompt, model=model):
                         yield chunk
-                    result_data = {"action": "chat", "reply": "done"}
                 elif tool == "search":
                     query = args.get("query", request_text)
                     res, _ = web_search(query)
                     if res.get("error"):
                         error_occurred = True
-                        result_data = {"error": res["error"]}
+                        yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         yield f"data: {json.dumps({'result': res['results'], 'tool': 'search'})}\n\n"
                         store_memory(request_text, tool, res.get("results", ""))
-                        final_response += res.get('results', '')
-                        result_data = {"action": "search"}
                 elif tool == "clone":
                     url = args.get("url", request_text)
                     if not url.startswith(('http://', 'https://')):
@@ -938,79 +765,68 @@ Style guide: {style_guide}
                         yield f"data: {json.dumps({'result': '📄 Loading webpage...', 'tool': 'clone'})}\n\n"
                         index_path, clone_dir = clone_website(url, output_dir)
                         store_memory(request_text, tool, f"Cloned to {clone_dir}")
-                        result_msg = f"✅ Clone completed! Saved to {clone_dir}"
-                        yield f"data: {json.dumps({'result': result_msg, 'path': index_path, 'directory': clone_dir, 'tool': 'clone'})}\n\n"
+                        yield f"data: {json.dumps({'result': f'✅ Clone completed! Saved to {clone_dir}', 'path': index_path, 'directory': clone_dir, 'tool': 'clone'})}\n\n"
                         yield f"data: {json.dumps({'clone_preview': clone_dir})}\n\n"
-                        final_response += result_msg
-                        result_data = {"action": "clone"}
                     except Exception as e:
                         error_occurred = True
-                        result_data = {"error": str(e)}
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 elif tool.startswith("plugin_"):
                     plugin_name = tool[7:]
                     if plugin_name not in _plugins:
                         error_occurred = True
-                        result_data = {"error": f"Plugin '{plugin_name}' not found"}
+                        yield f"data: {json.dumps({'error': f'Plugin {plugin_name} not found'})}\n\n"
                     else:
                         res = run_plugin(plugin_name, args)
-                        result_text = res.get('result', '')
                         if "error" in res:
                             error_occurred = True
-                            result_data = {"error": res["error"]}
+                            yield f"data: {json.dumps({'error': res['error']})}\n\n"
                         else:
+                            result_text = res.get('result', '')
                             yield f"data: {json.dumps({'result': result_text, 'tool': tool})}\n\n"
                             store_memory(request_text, tool, str(result_text))
-                            final_response += result_text
-                            result_data = {"action": "plugin"}
                 else:
-                    # Built‑in tools (similar to earlier)
                     if tool == "website":
                         task = args.get("task", request_text)
                         filename = args.get("filename", "website")
                         res, token_info = generate_website(task, filename, style_guide, model)
                         if res.get("error"):
                             error_occurred = True
-                            result_data = {"error": res["error"], "raw": res.get("raw")}
+                            yield f"data: {json.dumps({'error': res['error'], 'raw': res.get('raw')})}\n\n"
                         else:
-                            yield f"data: {json.dumps({'result': f'Website saved to {res["path"]}', 'tool': 'website', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                            result_str = f"Website saved to {res['path']}"
+                            yield f"data: {json.dumps({'result': result_str, 'tool': 'website', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
                             store_memory(request_text, tool, res.get("html", ""))
-                            final_response += f"Website saved to {res['path']}"
-                            result_data = {"action": "website"}
                     elif tool == "refine_html":
                         html = args.get("html", "")
                         instruction = args.get("instruction", "")
                         res, token_info = refine_html(html, instruction, model)
                         if res.get("error"):
                             error_occurred = True
-                            result_data = {"error": res["error"]}
+                            yield f"data: {json.dumps({'error': res['error']})}\n\n"
                         else:
-                            yield f"data: {json.dumps({'result': f'Refined HTML saved to {res["path"]}', 'tool': 'refine_html', 'new_html_preview': res['new_html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                            result_str = f"Refined HTML saved to {res['path']}"
+                            yield f"data: {json.dumps({'result': result_str, 'tool': 'refine_html', 'new_html_preview': res['new_html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
                             store_memory(request_text, tool, res.get("new_html", ""))
-                            final_response += f"Refined HTML saved to {res['path']}"
-                            result_data = {"action": "refine_html"}
                     elif tool == "code_to_html":
                         code = args.get("code", "")
                         res, token_info = convert_code_to_html(code, model)
                         if res.get("error"):
                             error_occurred = True
-                            result_data = {"error": res["error"]}
+                            yield f"data: {json.dumps({'error': res['error']})}\n\n"
                         else:
-                            yield f"data: {json.dumps({'result': f'HTML saved to {res["path"]}', 'tool': 'code_to_html', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                            result_str = f"HTML saved to {res['path']}"
+                            yield f"data: {json.dumps({'result': result_str, 'tool': 'code_to_html', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
                             store_memory(request_text, tool, res.get("html", ""))
-                            final_response += f"HTML saved to {res['path']}"
-                            result_data = {"action": "code_to_html"}
                     elif tool == "refine_code":
                         code = args.get("code", "")
                         instruction = args.get("instruction", "")
                         res, token_info = refine_code(code, instruction, model)
                         if res.get("error"):
                             error_occurred = True
-                            result_data = {"error": res["error"]}
+                            yield f"data: {json.dumps({'error': res['error']})}\n\n"
                         else:
                             yield f"data: {json.dumps({'result': 'Code refined', 'tool': 'refine_code', 'refined_code': res['refined_code'], 'token_info': token_info})}\n\n"
                             store_memory(request_text, tool, res.get("refined_code", ""))
-                            final_response += "Code refined"
-                            result_data = {"action": "refine_code"}
                     elif tool == "app_gen":
                         description = args.get("description", request_text)
                         language = args.get("language", "python")
@@ -1018,26 +834,26 @@ Style guide: {style_guide}
                         res, token_info = generate_app(description, language, filename, model)
                         if res.get("error"):
                             error_occurred = True
-                            result_data = {"error": res["error"]}
+                            yield f"data: {json.dumps({'error': res['error']})}\n\n"
                         else:
-                            yield f"data: {json.dumps({'result': f'App saved to {res["path"]}', 'tool': 'app_gen', 'code_preview': res['code'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                            result_str = f"App saved to {res['path']}"
+                            yield f"data: {json.dumps({'result': result_str, 'tool': 'app_gen', 'code_preview': res['code'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
                             store_memory(request_text, tool, res.get("code", ""))
-                            final_response += f"App saved to {res['path']}"
-                            result_data = {"action": "app_gen"}
                     else:
                         error_occurred = True
-                        result_data = {"error": f"Unknown tool: {tool}"}
+                        yield f"data: {json.dumps({'error': f'Unknown tool: {tool}'})}\n\n"
             except Exception as e:
                 error_occurred = True
-                result_data = {"error": str(e)}
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
             if error_occurred:
-                # Here we could implement recovery store, but for brevity we'll just send error
-                yield f"data: {json.dumps({'error': result_data.get('error', 'Unknown error')})}\n\n"
                 break
-            else:
-                step_idx += 1
+            step_idx += 1
         yield f"data: {json.dumps({'done': True})}\n\n"
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
 
 # ----------------------------------------------------------------------
 # Gemini image endpoint (unchanged)
@@ -1136,10 +952,6 @@ def system_stats():
         "ram_total_gb": round(ram_total_gb, 1),
         "gpu": gpu_info
     })
-
-@app.route('/favicon.ico')
-def favicon():
-    return '', 204
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
