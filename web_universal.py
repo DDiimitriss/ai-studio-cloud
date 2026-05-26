@@ -41,8 +41,8 @@ if not GEMINI_API_KEY:
 else:
     genai.configure(api_key=GEMINI_API_KEY)
 
-# Gemini text generation (using stable model gemini-1.5-flash)
-def ask_gemini(prompt, model="gemini-1.5-flash", use_cache=True):
+# Gemini text generation (using stable model gemini-pro)
+def ask_gemini(prompt, model="gemini-pro", use_cache=True):
     if not GEMINI_API_KEY:
         return "Error: Gemini API key not set.", None
     if use_cache:
@@ -62,7 +62,7 @@ def ask_gemini(prompt, model="gemini-1.5-flash", use_cache=True):
     except Exception as e:
         return f"Gemini error: {e}", None
 
-def ask_gemini_stream(prompt, model="gemini-1.5-flash"):
+def ask_gemini_stream(prompt, model="gemini-pro"):
     if not GEMINI_API_KEY:
         yield f"data: {json.dumps({'error': 'Gemini API key not set'})}\n\n"
         return
@@ -182,7 +182,7 @@ def save_file(content, filename, directory="Desktop"):
 # ----------------------------------------------------------------------
 # Core tools (using Gemini)
 # ----------------------------------------------------------------------
-def generate_website(task, filename, style_guide, model="gemini-1.5-flash"):
+def generate_website(task, filename, style_guide, model="gemini-pro"):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
     prompt = f"""You are an expert front-end developer. The user asks: {task}
@@ -208,7 +208,7 @@ Output ONLY the raw HTML code, starting with <!DOCTYPE html>. No triple backtick
         return result, token_info
     return {"error": "Could not extract valid HTML", "raw": response}, token_info
 
-def refine_html(original_html, instruction, model="gemini-1.5-flash"):
+def refine_html(original_html, instruction, model="gemini-pro"):
     refine_prompt = f"""You are an expert front-end developer. Here is an HTML document:
 {original_html}
 The user wants: {instruction}
@@ -228,7 +228,7 @@ Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No tri
         return result, token_info
     return {"error": "Gemini did not return valid HTML", "raw": refined}, token_info
 
-def convert_code_to_html(code, model="gemini-1.5-flash"):
+def convert_code_to_html(code, model="gemini-pro"):
     prompt = f"""You are a helpful assistant. The user provided code:
 ```{code}```
 Create a **complete, standalone HTML page** that displays this code nicely (syntax-highlighted) and explains what it does. Output ONLY raw HTML starting with <!DOCTYPE html>. No triple backticks."""
@@ -247,7 +247,7 @@ Create a **complete, standalone HTML page** that displays this code nicely (synt
         return result, token_info
     return {"error": "Failed to generate valid HTML", "raw": response}, token_info
 
-def refine_code(code, instruction, model="gemini-1.5-flash"):
+def refine_code(code, instruction, model="gemini-pro"):
     prompt = f"""You are an expert programmer. The user provided code:
 ```{code}```
 The user wants: {instruction}
@@ -270,7 +270,7 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
-def generate_app(description, language, filename_base, model="gemini-1.5-flash"):
+def generate_app(description, language, filename_base, model="gemini-pro"):
     lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
     ext = lang_ext.get(language, ".txt")
     prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY the raw code, no backticks."
@@ -360,7 +360,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": ["gemini-1.5-flash", "gemini-1.5-pro"]})
+    return jsonify({"models": ["gemini-pro", "gemini-1.5-pro"]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
@@ -380,7 +380,7 @@ def route_generate():
     task = data.get("task", "")
     filename = data.get("filename", "website")
     style_guide = data.get("styleGuide", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     res, token_info = generate_website(task, filename, style_guide, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -391,7 +391,7 @@ def route_refine():
     data = request.get_json()
     original_html = data.get("html", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     res, token_info = refine_html(original_html, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -401,7 +401,7 @@ def route_refine():
 def route_convert_code():
     data = request.get_json()
     code = data.get("code", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     res, token_info = convert_code_to_html(code, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -412,7 +412,7 @@ def route_refine_code():
     data = request.get_json()
     code = data.get("code", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     res, token_info = refine_code(code, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -433,7 +433,7 @@ def route_generate_app():
     description = data.get("description", "")
     language = data.get("language", "python")
     filename = data.get("filename", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     res, token_info = generate_app(description, language, filename, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -443,7 +443,7 @@ def route_generate_app():
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
-    model = data.get("model", "gemini-1.5-flash")
+    model = data.get("model", "gemini-pro")
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -576,7 +576,7 @@ Memories:
 {docs_text}
 
 Summary:"""
-        summary, _ = ask_gemini(summary_prompt, model="gemini-1.5-flash", use_cache=False)
+        summary, _ = ask_gemini(summary_prompt, model="gemini-pro", use_cache=False)
         summary = summary.strip()[:500]
         store_memory("memory_compression", "memory_summary", summary, metadata={"compressed": True, "original_count": len(to_compress)})
         ids_to_delete = [m["id"] for m in to_compress]
@@ -596,7 +596,7 @@ Summary:"""
 def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide = request.args.get("styleGuide", "")
-    model = request.args.get("model", "gemini-1.5-flash")
+    model = request.args.get("model", "gemini-pro")
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
@@ -799,24 +799,11 @@ def favicon():
     return '', 204
 
 # ----------------------------------------------------------------------
-# Gemini image endpoint (unchanged, but model must also be valid)
+# Gemini image endpoint (disabled in cloud for simplicity)
 # ----------------------------------------------------------------------
 @app.route("/gemini_image", methods=["POST"])
 def route_gemini_image():
-    data = request.get_json()
-    prompt = data.get("prompt", "")
-    image_base64 = data.get("image", None)
-    if not prompt:
-        return jsonify({"error": "No prompt provided"})
-    if not GEMINI_API_KEY:
-        return jsonify({"error": "Gemini API key not set."})
-    try:
-        # Use a stable image generation model (gemini-1.5-flash does not support image generation; fallback to gemini-1.5-pro-vision? Actually, we need a model that supports image generation. For now, use the same model as text; but for editing we rely on the API's capability. If this fails, we may need to adjust.)
-        # The original image model name 'gemini-2.5-flash-image-preview' may not exist; use a known working one: 'gemini-1.5-pro' for text-only. For actual image generation, you need the correct model. Since this is less critical, we'll keep the original but with a fallback.
-        # For cloud version, we may simply disable image generation or use a different model. Simpler: return error for now.
-        return jsonify({"error": "Image generation temporarily disabled in cloud version. Use local version for images."})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    return jsonify({"error": "Image generation temporarily disabled in cloud version. Use local version for images."})
 
 @app.route("/autocomplete", methods=["GET"])
 def autocomplete():
