@@ -46,6 +46,15 @@ DEFAULT_TEXT_MODEL = "stepfun/step-3.5-flash:free"
 # ✅ Free image model – valid until October 2026
 IMAGE_MODEL = "google/gemini-2.5-flash-image"
 
+# Only these models are allowed to be sent to OpenRouter
+VALID_MODELS = {DEFAULT_TEXT_MODEL, IMAGE_MODEL}
+
+def sanitize_model(requested_model):
+    """If the requested model is not in our known list, use the default text model."""
+    if requested_model in VALID_MODELS:
+        return requested_model
+    return DEFAULT_TEXT_MODEL
+
 # ----------------------------------------------------------------------
 # Helper to decide if user request is for image generation
 # ----------------------------------------------------------------------
@@ -62,6 +71,7 @@ def is_image_request(message):
 # Core OpenRouter chat functions
 # ----------------------------------------------------------------------
 def ask_openrouter(prompt, model=DEFAULT_TEXT_MODEL, use_cache=True):
+    model = sanitize_model(model)  # safety net
     if not OPENROUTER_API_KEY:
         return "Error: OpenRouter API key not set.", None
     if use_cache:
@@ -93,6 +103,7 @@ def ask_openrouter(prompt, model=DEFAULT_TEXT_MODEL, use_cache=True):
         return f"OpenRouter error: {str(e)}", None
 
 def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     if not OPENROUTER_API_KEY:
         yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
@@ -256,7 +267,7 @@ def recall_memory(query, n_results=3):
     return []
 
 # ----------------------------------------------------------------------
-# Plugin system (unchanged)
+# Plugin system
 # ----------------------------------------------------------------------
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
@@ -332,6 +343,7 @@ def save_file(content, filename, directory="Desktop"):
 # Core tools (using text model)
 # ----------------------------------------------------------------------
 def generate_website(task, filename, style_guide, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
     prompt = f"""You are an expert front-end developer. The user asks: {task}
@@ -358,6 +370,7 @@ Output ONLY the raw HTML code, starting with <!DOCTYPE html>. No triple backtick
     return {"error": "Could not extract valid HTML", "raw": response}, token_info
 
 def refine_html(original_html, instruction, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     refine_prompt = f"""You are an expert front-end developer. Here is an HTML document:
 {original_html}
 The user wants: {instruction}
@@ -378,6 +391,7 @@ Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No tri
     return {"error": "OpenRouter did not return valid HTML", "raw": refined}, token_info
 
 def convert_code_to_html(code, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     prompt = f"""You are a helpful assistant. The user provided code:
 ```{code}```
 Create a **complete, standalone HTML page** that displays this code nicely (syntax-highlighted) and explains what it does. Output ONLY raw HTML starting with <!DOCTYPE html>. No triple backticks."""
@@ -397,6 +411,7 @@ Create a **complete, standalone HTML page** that displays this code nicely (synt
     return {"error": "Failed to generate valid HTML", "raw": response}, token_info
 
 def refine_code(code, instruction, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     prompt = f"""You are an expert programmer. The user provided code:
 ```{code}```
 The user wants: {instruction}
@@ -420,6 +435,7 @@ def web_search(query, model=None):
         return {"error": str(e)}, None
 
 def generate_app(description, language, filename_base, model=DEFAULT_TEXT_MODEL):
+    model = sanitize_model(model)
     lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
     ext = lang_ext.get(language, ".txt")
     prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY the raw code, no backticks."
@@ -529,7 +545,7 @@ def route_generate():
     task = data.get("task", "")
     filename = data.get("filename", "website")
     style_guide = data.get("styleGuide", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
     res, token_info = generate_website(task, filename, style_guide, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -540,7 +556,7 @@ def route_refine():
     data = request.get_json()
     original_html = data.get("html", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
     res, token_info = refine_html(original_html, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -550,7 +566,7 @@ def route_refine():
 def route_convert_code():
     data = request.get_json()
     code = data.get("code", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
     res, token_info = convert_code_to_html(code, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -561,7 +577,7 @@ def route_refine_code():
     data = request.get_json()
     code = data.get("code", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
     res, token_info = refine_code(code, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -582,7 +598,7 @@ def route_generate_app():
     description = data.get("description", "")
     language = data.get("language", "python")
     filename = data.get("filename", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
     res, token_info = generate_app(description, language, filename, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -592,7 +608,7 @@ def route_generate_app():
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
-    requested_model = data.get("model", DEFAULT_TEXT_MODEL)
+    requested_model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
 
     # Auto-detect image generation request
     if is_image_request(message):
@@ -757,7 +773,7 @@ Summary:"""
 def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide = request.args.get("styleGuide", "")
-    model = request.args.get("model", DEFAULT_TEXT_MODEL)
+    model = sanitize_model(request.args.get("model", DEFAULT_TEXT_MODEL))
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
 
