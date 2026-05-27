@@ -36,7 +36,7 @@ USER_HOME = get_user_home()
 # ----------------------------------------------------------------------
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "google/gemini-1.5-flash"  # free model
+DEFAULT_MODEL = "google/gemini-2.0-flash-001"  # current free Gemini model on OpenRouter
 
 def is_valid_openrouter_model(model):
     """Check if model looks like a valid OpenRouter model ID."""
@@ -44,15 +44,13 @@ def is_valid_openrouter_model(model):
     return model.startswith(valid_prefixes)
 
 def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
-    """Call OpenRouter API (supports many models, free tier)."""
     if not OPENROUTER_API_KEY:
         return "Error: OpenRouter API key not set. Please set OPENROUTER_API_KEY environment variable.", None
-    
-    # Ensure model is valid; fallback to default
+
     if not is_valid_openrouter_model(model):
         print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
         model = DEFAULT_MODEL
-    
+
     if use_cache:
         cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
         if cache_key in _openrouter_cache:
@@ -82,16 +80,14 @@ def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
         return f"OpenRouter error: {str(e)}", None
 
 def ask_openrouter_stream(prompt, model=DEFAULT_MODEL):
-    """Stream OpenRouter response token by token."""
     if not OPENROUTER_API_KEY:
         yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
-    
-    # Ensure model is valid; fallback to default
+
     if not is_valid_openrouter_model(model):
         print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
         model = DEFAULT_MODEL
-    
+
     try:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -155,7 +151,7 @@ def recall_memory(query, n_results=3):
     return []
 
 # ----------------------------------------------------------------------
-# Plugin system
+# Plugin system (unchanged)
 # ----------------------------------------------------------------------
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
@@ -216,7 +212,6 @@ def clean_html(raw):
     return raw.strip()
 
 def save_file(content, filename, directory="Desktop"):
-    # In cloud, save to a local data folder
     if not os.path.exists("data"):
         os.makedirs("data")
     path = os.path.join("data", filename)
@@ -409,7 +404,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": ["google/gemini-1.5-flash", "google/gemini-1.5-pro", "openai/gpt-3.5-turbo"]})
+    return jsonify({"models": ["google/gemini-2.0-flash-001", "google/gemini-2.5-flash-preview", "mistralai/mistral-7b-instruct"]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
