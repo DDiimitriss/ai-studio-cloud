@@ -11,6 +11,8 @@ import importlib.util
 import sys
 import base64
 import tempfile
+import subprocess
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context, send_from_directory
 from urllib.parse import urljoin, urlparse
 import chromadb
@@ -34,13 +36,31 @@ def get_user_home():
 USER_HOME = get_user_home()
 
 # ----------------------------------------------------------------------
-# OpenRouter API configuration (free, no billing)
+# OpenRouter API configuration (free tier)
 # ----------------------------------------------------------------------
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_TEXT_MODEL = "google/gemini-3-flash-preview"        # free text model
-IMAGE_MODEL = "google/gemini-2.5-flash-image-preview:free" # free image model
 
+# ✅ Best free text model (fast, reliable, highly popular)
+DEFAULT_TEXT_MODEL = "stepfun/step-3.5-flash:free"
+# ✅ Free image model – valid until October 2026
+IMAGE_MODEL = "google/gemini-2.5-flash-image"
+
+# ----------------------------------------------------------------------
+# Helper to decide if user request is for image generation
+# ----------------------------------------------------------------------
+def is_image_request(message):
+    keywords = [
+        "draw", "generate image", "create an image", "generate a picture",
+        "make an image", "image of", "picture of", "create a picture",
+        "generate a photo", "sketch", "illustrate", "visualize",
+        "nano banana", "paint a", "design an image"
+    ]
+    return any(kw in message.lower() for kw in keywords)
+
+# ----------------------------------------------------------------------
+# Core OpenRouter chat functions
+# ----------------------------------------------------------------------
 def ask_openrouter(prompt, model=DEFAULT_TEXT_MODEL, use_cache=True):
     if not OPENROUTER_API_KEY:
         return "Error: OpenRouter API key not set.", None
@@ -112,22 +132,19 @@ def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
 _openrouter_cache = {}
 
 # ----------------------------------------------------------------------
-# Image generation using OpenRouter's image model
+# Image generation (using the free image model)
 # ----------------------------------------------------------------------
 def generate_image_with_openrouter(prompt, image_base64=None):
-    """Call OpenRouter's image model to generate or edit an image."""
     if not OPENROUTER_API_KEY:
-        return "Error: OpenRouter API key not set.", None
+        return None, "OpenRouter API key not set."
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # Build content parts
     content_parts = [{"type": "text", "text": prompt}]
     if image_base64:
-        # Remove data URL prefix if present
         if ',' in image_base64:
             image_base64 = image_base64.split(',')[1]
         content_parts.append({
@@ -143,38 +160,76 @@ def generate_image_with_openrouter(prompt, image_base64=None):
 
     try:
         resp = requests.post(OPENROUTER_URL, headers=headers, json=data, timeout=120)
-        if resp.status_code == 200:
-            # The response may contain a base64 image or a URL. OpenRouter image models often return a message with a URL.
-            reply = resp.json()["choices"][0]["message"]["content"]
-            # If reply contains a URL, we could download it. For simplicity, we'll return the URL.
-            # But we want to save the image locally and return the path.
-            # Attempt to extract a URL from the reply
-            url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', reply, re.IGNORECASE)
-            if url_match:
-                image_url = url_match.group(1)
-                # Download the image
-                img_resp = requests.get(image_url, timeout=30)
-                if img_resp.status_code == 200:
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    filename = f"generated_image_{timestamp}.png"
-                    if not os.path.exists("data"):
-                        os.makedirs("data")
-                    save_path = os.path.join("data", filename)
-                    with open(save_path, "wb") as f:
-                        f.write(img_resp.content)
-                    return save_path, None
-                else:
-                    return None, "Failed to download generated image"
-            else:
-                # If no URL, maybe the reply itself is a base64 image? Not typical for OpenRouter.
-                return None, "No image URL found in response"
-        else:
-            return None, f"OpenRouter image error: {resp.status_code} - {resp.text}"
+        if resp.status_code != 200:
+            return None, f"OpenRouter error: {resp.status_code} - {resp.text}"
+
+        content = resp.json()["choices"][0]["message"]["content"]
+
+        # Case 1: Markdown image link ![img](url)
+        markdown_url = re.search(r'!\[.*?\]\((https?://[^\s\)]+)\)', content)
+        if markdown_url:
+            image_url = markdown_url.group(1)
+            return _download_and_save_image(image_url), None
+
+        # Case 2: Plain URL ending with image extension
+        plain_url = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', content, re.IGNORECASE)
+        if plain_url:
+            image_url = plain_url.group(1)
+            return _download_and_save_image(image_url), None
+
+        # Case 3: base64 data URI
+        base64_match = re.search(r'data:image/[^;]+;base64,([A-Za-z0-9+/=]+)', content)
+        if base64_match:
+            b64_string = base64_match.group(1)
+            image_data = base64.b64decode(b64_string)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"generated_{timestamp}.png"
+            filepath = os.path.join("static", "generated", filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(image_data)
+            return filepath, None
+
+        # Case 4: the whole content is a base64 image? Try anyway.
+        if content.strip().startswith("data:image"):
+            header, b64 = content.split(",", 1)
+            ext = header.split("/")[1].split(";")[0]
+            image_data = base64.b64decode(b64)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"generated_{timestamp}.{ext}"
+            filepath = os.path.join("static", "generated", filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(image_data)
+            return filepath, None
+
+        return None, f"No image found in response: {content[:200]}..."
+
     except Exception as e:
         return None, str(e)
 
+def _download_and_save_image(url):
+    try:
+        img_resp = requests.get(url, timeout=30)
+        if img_resp.status_code == 200:
+            ext = url.split('.')[-1].split('?')[0]
+            if ext.lower() not in ('png', 'jpg', 'jpeg', 'gif', 'webp'):
+                ext = 'png'
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"generated_{timestamp}.{ext}"
+            filepath = os.path.join("static", "generated", filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(img_resp.content)
+            return filepath
+        else:
+            return None
+    except Exception as e:
+        print(f"Download failed: {e}")
+        return None
+
 # ----------------------------------------------------------------------
-# ChromaDB persistent memory
+# ChromaDB memory
 # ----------------------------------------------------------------------
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
@@ -274,7 +329,7 @@ def save_file(content, filename, directory="Desktop"):
     return path
 
 # ----------------------------------------------------------------------
-# Core tools (using OpenRouter)
+# Core tools (using text model)
 # ----------------------------------------------------------------------
 def generate_website(task, filename, style_guide, model=DEFAULT_TEXT_MODEL):
     memories = recall_memory("website " + task, n_results=2)
@@ -446,7 +501,7 @@ def clone_website(url, output_dir, progress_callback=None):
     return index_path, clone_root
 
 # ----------------------------------------------------------------------
-# Flask routes (using OpenRouter)
+# Flask routes
 # ----------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -454,7 +509,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": [DEFAULT_TEXT_MODEL, IMAGE_MODEL, "openrouter/free"]})
+    return jsonify({"models": [DEFAULT_TEXT_MODEL, IMAGE_MODEL]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
@@ -537,7 +592,19 @@ def route_generate_app():
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
+    requested_model = data.get("model", DEFAULT_TEXT_MODEL)
+
+    # Auto-detect image generation request
+    if is_image_request(message):
+        save_path, error = generate_image_with_openrouter(message)
+        if error:
+            return jsonify({"reply": f"❌ Image generation failed: {error}"})
+        else:
+            image_url = f"/{save_path.replace(os.sep, '/')}"
+            store_memory(message, "image_generation", f"Generated image at {save_path}")
+            return jsonify({"reply": f"✅ Image generated successfully!\n![Generated Image]({image_url})"})
+
+    model = requested_model
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -684,7 +751,7 @@ Summary:"""
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------------------------------------------------
-# Streaming smart agent (with forced image rule)
+# Streaming smart agent
 # ----------------------------------------------------------------------
 @app.route("/stream_smart_agent", methods=["GET"])
 def stream_smart_agent():
@@ -693,24 +760,21 @@ def stream_smart_agent():
     model = request.args.get("model", DEFAULT_TEXT_MODEL)
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
+
     def generate():
-        # FORCED IMAGE GENERATION RULE
-        image_keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of", "create a picture", "generate a photo"]
-        if any(kw in request_text.lower() for kw in image_keywords):
-            # Extract prompt (remove the keywords? keep the whole request as prompt)
-            prompt = request_text
-            # Check if there's an uploaded image? Not from this endpoint, but we can accept base64 from frontend later.
-            # For now, just text-to-image.
-            save_path, error = generate_image_with_openrouter(prompt, image_base64=None)
+        # Image generation detection
+        if is_image_request(request_text):
+            save_path, error = generate_image_with_openrouter(request_text)
             if error:
                 yield f"data: {json.dumps({'error': error})}\n\n"
             else:
-                result_msg = f"✅ Image generated and saved to {save_path}"
+                image_url = f"/{save_path.replace(os.sep, '/')}"
+                result_msg = f"✅ Image generated successfully!\n![Generated Image]({image_url})"
                 yield f"data: {json.dumps({'result': result_msg, 'path': save_path, 'tool': 'image_generation'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # FORCED EMAIL RULE
+        # Email
         email_keywords = ["send an email", "send email", "email to", "mail to", "send a message to"]
         if any(kw in request_text.lower() for kw in email_keywords):
             args = {"to": "recipient@example.com"}
@@ -727,7 +791,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # FORCED SCREENSHOT RULE
+        # Screenshot
         screenshot_keywords = ["screenshot", "take a screenshot", "capture screenshot", "screen capture", "snap a picture"]
         if any(kw in request_text.lower() for kw in screenshot_keywords):
             url_match = re.search(r'(https?://[^\s]+)', request_text)
@@ -784,6 +848,7 @@ Style guide: {style_guide}
             decisions = [decision]
         else:
             decisions = decision
+
         step_idx = 0
         while step_idx < len(decisions):
             action = decisions[step_idx]
@@ -903,15 +968,13 @@ Style guide: {style_guide}
                 break
             step_idx += 1
         yield f"data: {json.dumps({'done': True})}\n\n"
+
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
 
-# ----------------------------------------------------------------------
-# Image generation endpoint (kept for backward compatibility)
-# ----------------------------------------------------------------------
 @app.route("/gemini_image", methods=["POST"])
 def route_gemini_image():
     data = request.get_json()
@@ -984,5 +1047,5 @@ def system_stats():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"\nStarting Qwen AI Studio (cloud version with OpenRouter) on port {port}\n")
+    print(f"\nStarting AI Studio (cloud version with OpenRouter) on port {port}\n")
     app.run(debug=False, host="0.0.0.0", port=port)
