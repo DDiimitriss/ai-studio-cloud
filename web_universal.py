@@ -9,6 +9,8 @@ import zipfile
 import shutil
 import importlib.util
 import sys
+import base64
+import tempfile
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context, send_from_directory
 from urllib.parse import urljoin, urlparse
 import chromadb
@@ -36,21 +38,12 @@ USER_HOME = get_user_home()
 # ----------------------------------------------------------------------
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"  # current free Gemini model on OpenRouter
+DEFAULT_TEXT_MODEL = "google/gemini-3-flash-preview"        # free text model
+IMAGE_MODEL = "google/gemini-2.5-flash-image-preview:free" # free image model
 
-def is_valid_openrouter_model(model):
-    """Check if model looks like a valid OpenRouter model ID."""
-    valid_prefixes = ("google/", "openai/", "meta-llama/", "anthropic/", "microsoft/", "cohere/", "mistralai/", "deepseek/")
-    return model.startswith(valid_prefixes)
-
-def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
+def ask_openrouter(prompt, model=DEFAULT_TEXT_MODEL, use_cache=True):
     if not OPENROUTER_API_KEY:
-        return "Error: OpenRouter API key not set. Please set OPENROUTER_API_KEY environment variable.", None
-
-    if not is_valid_openrouter_model(model):
-        print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
-        model = DEFAULT_MODEL
-
+        return "Error: OpenRouter API key not set.", None
     if use_cache:
         cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
         if cache_key in _openrouter_cache:
@@ -79,15 +72,10 @@ def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
     except Exception as e:
         return f"OpenRouter error: {str(e)}", None
 
-def ask_openrouter_stream(prompt, model=DEFAULT_MODEL):
+def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
     if not OPENROUTER_API_KEY:
         yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
-
-    if not is_valid_openrouter_model(model):
-        print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
-        model = DEFAULT_MODEL
-
     try:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -122,6 +110,68 @@ def ask_openrouter_stream(prompt, model=DEFAULT_MODEL):
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
 _openrouter_cache = {}
+
+# ----------------------------------------------------------------------
+# Image generation using OpenRouter's image model
+# ----------------------------------------------------------------------
+def generate_image_with_openrouter(prompt, image_base64=None):
+    """Call OpenRouter's image model to generate or edit an image."""
+    if not OPENROUTER_API_KEY:
+        return "Error: OpenRouter API key not set.", None
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Build content parts
+    content_parts = [{"type": "text", "text": prompt}]
+    if image_base64:
+        # Remove data URL prefix if present
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+        content_parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{image_base64}"}
+        })
+
+    data = {
+        "model": IMAGE_MODEL,
+        "messages": [{"role": "user", "content": content_parts}],
+        "temperature": 0.7
+    }
+
+    try:
+        resp = requests.post(OPENROUTER_URL, headers=headers, json=data, timeout=120)
+        if resp.status_code == 200:
+            # The response may contain a base64 image or a URL. OpenRouter image models often return a message with a URL.
+            reply = resp.json()["choices"][0]["message"]["content"]
+            # If reply contains a URL, we could download it. For simplicity, we'll return the URL.
+            # But we want to save the image locally and return the path.
+            # Attempt to extract a URL from the reply
+            url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', reply, re.IGNORECASE)
+            if url_match:
+                image_url = url_match.group(1)
+                # Download the image
+                img_resp = requests.get(image_url, timeout=30)
+                if img_resp.status_code == 200:
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    filename = f"generated_image_{timestamp}.png"
+                    if not os.path.exists("data"):
+                        os.makedirs("data")
+                    save_path = os.path.join("data", filename)
+                    with open(save_path, "wb") as f:
+                        f.write(img_resp.content)
+                    return save_path, None
+                else:
+                    return None, "Failed to download generated image"
+            else:
+                # If no URL, maybe the reply itself is a base64 image? Not typical for OpenRouter.
+                return None, "No image URL found in response"
+        else:
+            return None, f"OpenRouter image error: {resp.status_code} - {resp.text}"
+    except Exception as e:
+        return None, str(e)
 
 # ----------------------------------------------------------------------
 # ChromaDB persistent memory
@@ -226,7 +276,7 @@ def save_file(content, filename, directory="Desktop"):
 # ----------------------------------------------------------------------
 # Core tools (using OpenRouter)
 # ----------------------------------------------------------------------
-def generate_website(task, filename, style_guide, model=DEFAULT_MODEL):
+def generate_website(task, filename, style_guide, model=DEFAULT_TEXT_MODEL):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
     prompt = f"""You are an expert front-end developer. The user asks: {task}
@@ -252,7 +302,7 @@ Output ONLY the raw HTML code, starting with <!DOCTYPE html>. No triple backtick
         return result, token_info
     return {"error": "Could not extract valid HTML", "raw": response}, token_info
 
-def refine_html(original_html, instruction, model=DEFAULT_MODEL):
+def refine_html(original_html, instruction, model=DEFAULT_TEXT_MODEL):
     refine_prompt = f"""You are an expert front-end developer. Here is an HTML document:
 {original_html}
 The user wants: {instruction}
@@ -272,7 +322,7 @@ Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No tri
         return result, token_info
     return {"error": "OpenRouter did not return valid HTML", "raw": refined}, token_info
 
-def convert_code_to_html(code, model=DEFAULT_MODEL):
+def convert_code_to_html(code, model=DEFAULT_TEXT_MODEL):
     prompt = f"""You are a helpful assistant. The user provided code:
 ```{code}```
 Create a **complete, standalone HTML page** that displays this code nicely (syntax-highlighted) and explains what it does. Output ONLY raw HTML starting with <!DOCTYPE html>. No triple backticks."""
@@ -291,7 +341,7 @@ Create a **complete, standalone HTML page** that displays this code nicely (synt
         return result, token_info
     return {"error": "Failed to generate valid HTML", "raw": response}, token_info
 
-def refine_code(code, instruction, model=DEFAULT_MODEL):
+def refine_code(code, instruction, model=DEFAULT_TEXT_MODEL):
     prompt = f"""You are an expert programmer. The user provided code:
 ```{code}```
 The user wants: {instruction}
@@ -314,7 +364,7 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
-def generate_app(description, language, filename_base, model=DEFAULT_MODEL):
+def generate_app(description, language, filename_base, model=DEFAULT_TEXT_MODEL):
     lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
     ext = lang_ext.get(language, ".txt")
     prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY the raw code, no backticks."
@@ -404,7 +454,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": ["google/gemini-2.0-flash-001", "google/gemini-2.5-flash-preview", "mistralai/mistral-7b-instruct"]})
+    return jsonify({"models": [DEFAULT_TEXT_MODEL, IMAGE_MODEL, "openrouter/free"]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
@@ -424,7 +474,7 @@ def route_generate():
     task = data.get("task", "")
     filename = data.get("filename", "website")
     style_guide = data.get("styleGuide", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     res, token_info = generate_website(task, filename, style_guide, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -435,7 +485,7 @@ def route_refine():
     data = request.get_json()
     original_html = data.get("html", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     res, token_info = refine_html(original_html, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -445,7 +495,7 @@ def route_refine():
 def route_convert_code():
     data = request.get_json()
     code = data.get("code", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     res, token_info = convert_code_to_html(code, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -456,7 +506,7 @@ def route_refine_code():
     data = request.get_json()
     code = data.get("code", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     res, token_info = refine_code(code, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -477,7 +527,7 @@ def route_generate_app():
     description = data.get("description", "")
     language = data.get("language", "python")
     filename = data.get("filename", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     res, token_info = generate_app(description, language, filename, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -487,7 +537,7 @@ def route_generate_app():
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
-    model = data.get("model", DEFAULT_MODEL)
+    model = data.get("model", DEFAULT_TEXT_MODEL)
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -620,7 +670,7 @@ Memories:
 {docs_text}
 
 Summary:"""
-        summary, _ = ask_openrouter(summary_prompt, model=DEFAULT_MODEL, use_cache=False)
+        summary, _ = ask_openrouter(summary_prompt, model=DEFAULT_TEXT_MODEL, use_cache=False)
         summary = summary.strip()[:500]
         store_memory("memory_compression", "memory_summary", summary, metadata={"compressed": True, "original_count": len(to_compress)})
         ids_to_delete = [m["id"] for m in to_compress]
@@ -634,17 +684,33 @@ Summary:"""
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------------------------------------------------
-# Streaming smart agent (using OpenRouter)
+# Streaming smart agent (with forced image rule)
 # ----------------------------------------------------------------------
 @app.route("/stream_smart_agent", methods=["GET"])
 def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide = request.args.get("styleGuide", "")
-    model = request.args.get("model", DEFAULT_MODEL)
+    model = request.args.get("model", DEFAULT_TEXT_MODEL)
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # Forced email rule
+        # FORCED IMAGE GENERATION RULE
+        image_keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of", "create a picture", "generate a photo"]
+        if any(kw in request_text.lower() for kw in image_keywords):
+            # Extract prompt (remove the keywords? keep the whole request as prompt)
+            prompt = request_text
+            # Check if there's an uploaded image? Not from this endpoint, but we can accept base64 from frontend later.
+            # For now, just text-to-image.
+            save_path, error = generate_image_with_openrouter(prompt, image_base64=None)
+            if error:
+                yield f"data: {json.dumps({'error': error})}\n\n"
+            else:
+                result_msg = f"✅ Image generated and saved to {save_path}"
+                yield f"data: {json.dumps({'result': result_msg, 'path': save_path, 'tool': 'image_generation'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+
+        # FORCED EMAIL RULE
         email_keywords = ["send an email", "send email", "email to", "mail to", "send a message to"]
         if any(kw in request_text.lower() for kw in email_keywords):
             args = {"to": "recipient@example.com"}
@@ -661,7 +727,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # Forced screenshot rule
+        # FORCED SCREENSHOT RULE
         screenshot_keywords = ["screenshot", "take a screenshot", "capture screenshot", "screen capture", "snap a picture"]
         if any(kw in request_text.lower() for kw in screenshot_keywords):
             url_match = re.search(r'(https?://[^\s]+)', request_text)
@@ -679,6 +745,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
+        # Normal decision prompt
         memories = recall_memory(request_text, n_results=5)
         memory_context = "\n".join(memories) if memories else "No similar past tasks."
         plugins_info = get_plugins_info()
@@ -843,11 +910,20 @@ def favicon():
     return '', 204
 
 # ----------------------------------------------------------------------
-# Gemini image endpoint (disabled in cloud)
+# Image generation endpoint (kept for backward compatibility)
 # ----------------------------------------------------------------------
 @app.route("/gemini_image", methods=["POST"])
 def route_gemini_image():
-    return jsonify({"error": "Image generation temporarily disabled in cloud version. Use local version for images."})
+    data = request.get_json()
+    prompt = data.get("prompt", "")
+    image_base64 = data.get("image", None)
+    if not prompt:
+        return jsonify({"error": "No prompt provided"})
+    save_path, error = generate_image_with_openrouter(prompt, image_base64)
+    if error:
+        return jsonify({"error": error})
+    else:
+        return jsonify({"path": save_path, "status": "success"})
 
 @app.route("/autocomplete", methods=["GET"])
 def autocomplete():
