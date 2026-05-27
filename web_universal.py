@@ -24,6 +24,9 @@ import psutil
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "studio-secret-change-me-in-production")
 
+# ----------------------------------------------------------------------
+# Portable home directory (works on Windows and Linux)
+# ----------------------------------------------------------------------
 def get_user_home():
     if os.name == 'nt':
         return os.environ.get("USERPROFILE", os.path.expanduser("~"))
@@ -32,13 +35,20 @@ def get_user_home():
 
 USER_HOME = get_user_home()
 
+# ----------------------------------------------------------------------
+# OpenRouter API configuration
+# ----------------------------------------------------------------------
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Text model: auto‑router to avoid rate limits
 DEFAULT_TEXT_MODEL = "openrouter/free"
-IMAGE_MODEL        = "google/gemini-2.5-flash-image-preview:free"
-IMAGE_MODEL_PAID   = "google/gemini-2.5-flash-image"
 
+# Image generation models
+IMAGE_MODEL        = "google/gemini-2.5-flash-image-preview:free"   # free tier
+IMAGE_MODEL_PAID   = "google/gemini-2.5-flash-image"                # paid fallback
+
+# Whitelist of valid models
 VALID_MODELS = {
     "openrouter/free",
     "qwen/qwen3-coder:free",
@@ -64,27 +74,44 @@ def sanitize_model(requested_model):
     return DEFAULT_TEXT_MODEL
 
 def strip_thinking_tags(text):
+    """Remove <think>...</think> blocks from reasoning model output."""
     if not isinstance(text, str):
         return text
     return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
+# ----------------------------------------------------------------------
+# Core OpenRouter chat functions
+# ----------------------------------------------------------------------
 def ask_openrouter(prompt, model=DEFAULT_TEXT_MODEL, use_cache=True):
     model = sanitize_model(model)
     if not OPENROUTER_API_KEY:
         return "Error: OpenRouter API key not set.", None
+
     cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
     if use_cache and cache_key in _openrouter_cache:
         return _openrouter_cache[cache_key], None
+
     try:
-        headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-        data = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.7}
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
         resp = requests.post(OPENROUTER_URL, headers=headers, json=data, timeout=60)
         if resp.status_code == 200:
             resp_data = resp.json()
             raw_reply = resp_data["choices"][0]["message"]["content"]
             reply = strip_thinking_tags(raw_reply)
             usage = resp_data.get("usage", {})
-            token_info = {"total_tokens": usage.get("total_tokens", 0), "prompt_tokens": usage.get("prompt_tokens", 0), "completion_tokens": usage.get("completion_tokens", 0)}
+            token_info = {
+                "total_tokens":      usage.get("total_tokens", 0),
+                "prompt_tokens":     usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+            }
             if use_cache:
                 if len(_openrouter_cache) >= 50:
                     _openrouter_cache.pop(next(iter(_openrouter_cache)))
@@ -101,10 +128,17 @@ def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
         yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
     try:
-        headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-        data = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": True}
-        in_think = False
-        think_buf = ""
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True
+        }
+        in_think   = False
+        think_buf  = ""
         with requests.post(OPENROUTER_URL, headers=headers, json=data, stream=True, timeout=120) as resp:
             if resp.status_code != 200:
                 yield f"data: {json.dumps({'error': f'OpenRouter error {resp.status_code}'})}\n\n"
@@ -128,7 +162,7 @@ def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
                                         parts = token.split('<think>', 1)
                                         if parts[0]:
                                             yield f"data: {json.dumps({'token': parts[0]})}\n\n"
-                                        in_think = True
+                                        in_think  = True
                                         think_buf = parts[1] if len(parts) > 1 else ""
                                     else:
                                         yield f"data: {json.dumps({'token': token})}\n\n"
@@ -136,7 +170,7 @@ def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
                                     think_buf += token
                                     if '</think>' in think_buf:
                                         after = think_buf.split('</think>', 1)[1]
-                                        in_think = False
+                                        in_think  = False
                                         think_buf = ""
                                         if after:
                                             yield f"data: {json.dumps({'token': after})}\n\n"
@@ -146,17 +180,32 @@ def ask_openrouter_stream(prompt, model=DEFAULT_TEXT_MODEL):
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
+# ----------------------------------------------------------------------
+# Image generation
+# ----------------------------------------------------------------------
 def generate_image_with_openrouter(prompt, image_base64=None):
     if not OPENROUTER_API_KEY:
         return None, "OpenRouter API key not set."
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     content_parts = [{"type": "text", "text": prompt}]
     if image_base64:
         if ',' in image_base64:
             image_base64 = image_base64.split(',')[1]
-        content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}})
+        content_parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{image_base64}"}
+        })
+
     for model_id in [IMAGE_MODEL, IMAGE_MODEL_PAID]:
-        data = {"model": model_id, "messages": [{"role": "user", "content": content_parts}]}
+        data = {
+            "model": model_id,
+            "messages": [{"role": "user", "content": content_parts}],
+        }
         try:
             resp = requests.post(OPENROUTER_URL, headers=headers, json=data, timeout=120)
             if resp.status_code in (402, 404, 400):
@@ -164,9 +213,11 @@ def generate_image_with_openrouter(prompt, image_base64=None):
                 continue
             if resp.status_code != 200:
                 return None, f"OpenRouter error: {resp.status_code} - {resp.text}"
+
             resp_json = resp.json()
-            message = resp_json["choices"][0]["message"]
-            content = message.get("content", "")
+            message   = resp_json["choices"][0]["message"]
+            content   = message.get("content", "")
+
             if isinstance(content, list):
                 for part in content:
                     if not isinstance(part, dict):
@@ -185,13 +236,16 @@ def generate_image_with_openrouter(prompt, image_base64=None):
                         if path:
                             return path, None
                 return None, "No image found in multimodal response."
+
             content_str = str(content)
             path = _extract_image_from_text(content_str)
             if path:
                 return path, None
             return None, f"No image found in response: {content_str[:200]}..."
+
         except Exception as e:
             return None, str(e)
+
     return None, "All image generation models failed or are unavailable."
 
 def _extract_image_from_text(text):
@@ -210,9 +264,9 @@ def _extract_image_from_text(text):
 def _save_b64_image(b64_string, ext="png"):
     try:
         image_data = base64.b64decode(b64_string)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"generated_{timestamp}.{ext}"
-        filepath = os.path.join("static", "generated", filename)
+        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename   = f"generated_{timestamp}.{ext}"
+        filepath   = os.path.join("static", "generated", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(image_data)
@@ -229,8 +283,8 @@ def _download_and_save_image(url):
             if ext not in ('png', 'jpg', 'jpeg', 'gif', 'webp'):
                 ext = 'png'
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"generated_{timestamp}.{ext}"
-            filepath = os.path.join("static", "generated", filename)
+            filename  = f"generated_{timestamp}.{ext}"
+            filepath  = os.path.join("static", "generated", filename)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "wb") as f:
                 f.write(img_resp.content)
@@ -240,11 +294,18 @@ def _download_and_save_image(url):
         print(f"[_download_and_save_image] Failed: {e}")
         return None
 
+# ----------------------------------------------------------------------
+# ChromaDB memory
+# ----------------------------------------------------------------------
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
-memory_collection = chroma_client.get_or_create_collection(name="studio_memory", embedding_function=embedding_fn, metadata={"hnsw:space": "cosine"})
+memory_collection = chroma_client.get_or_create_collection(
+    name="studio_memory",
+    embedding_function=embedding_fn,
+    metadata={"hnsw:space": "cosine"}
+)
 
 def store_memory(user_input, action, output, metadata=None):
     doc_id = "{}_{}".format(int(time.time()), hashlib.md5(user_input.encode()).hexdigest()[:8])
@@ -260,6 +321,9 @@ def recall_memory(query, n_results=3):
         return results['documents'][0]
     return []
 
+# ----------------------------------------------------------------------
+# Plugin system
+# ----------------------------------------------------------------------
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
 init_path = os.path.join(PLUGINS_DIR, "__init__.py")
@@ -308,11 +372,14 @@ def run_plugin(plugin_name, args):
     except Exception as e:
         return {"error": str(e)}
 
+# ----------------------------------------------------------------------
+# Helper functions
+# ----------------------------------------------------------------------
 def clean_html(raw):
-    raw = re.sub(r'^`[^\n]*\n?', '', raw)
-    raw = re.sub(r'\n?`$', '', raw)
-    raw = raw.replace('`', '')
-    raw = re.sub(r'html', '', raw)
+    raw = re.sub(r'^```[^\n]*\n?', '', raw)
+    raw = re.sub(r'\n?```$', '', raw)
+    raw = raw.replace('```', '')
+    raw = re.sub(r'`html`', '', raw)
     return raw.strip()
 
 def save_file(content, filename, directory="Desktop"):
@@ -327,6 +394,9 @@ def save_file(content, filename, directory="Desktop"):
             f.write(content)
     return path
 
+# ----------------------------------------------------------------------
+# Core tools
+# ----------------------------------------------------------------------
 def generate_website(task, filename, style_guide, model=DEFAULT_TEXT_MODEL):
     model = sanitize_model(model)
     memories = recall_memory("website " + task, n_results=2)
@@ -378,7 +448,7 @@ Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No tri
 def convert_code_to_html(code, model=DEFAULT_TEXT_MODEL):
     model = sanitize_model(model)
     prompt = f"""You are a helpful assistant. The user provided code:
-`{code}`
+```{code}```
 Create a **complete, standalone HTML page** that displays this code nicely (syntax-highlighted) and explains what it does. Output ONLY raw HTML starting with <!DOCTYPE html>. No triple backticks."""
     response, token_info = ask_openrouter(prompt, model=model)
     clean = clean_html(response)
@@ -398,12 +468,12 @@ Create a **complete, standalone HTML page** that displays this code nicely (synt
 def refine_code(code, instruction, model=DEFAULT_TEXT_MODEL):
     model = sanitize_model(model)
     prompt = f"""You are an expert programmer. The user provided code:
-`{code}`
+```{code}```
 The user wants: {instruction}
 Output ONLY the refined code, no explanations, no markdown, no triple backticks."""
     response, token_info = ask_openrouter(prompt, model=model)
-    refined = re.sub(r'^`[^\n]*\n?', '', response)
-    refined = re.sub(r'\n?`$', '', refined)
+    refined = re.sub(r'^```[^\n]*\n?', '', response)
+    refined = re.sub(r'\n?```$', '', refined)
     result = {"refined_code": refined, "error": None}
     store_memory(instruction, "code_refinement", result.get("refined_code", ""))
     return result, token_info
@@ -425,8 +495,8 @@ def generate_app(description, language, filename_base, model=DEFAULT_TEXT_MODEL)
     ext = lang_ext.get(language, ".txt")
     prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY the raw code, no backticks."
     code, token_info = ask_openrouter(prompt, model=model)
-    code = re.sub(r'^`[^\n]*\n?', '', code)
-    code = re.sub(r'\n?`$', '', code)
+    code = re.sub(r'^```[^\n]*\n?', '', code)
+    code = re.sub(r'\n?```$', '', code)
     if not filename_base:
         words = re.findall(r'\b\w+\b', description.lower())
         base = "_".join(words[:3]) if words else "app"
@@ -501,17 +571,34 @@ def clone_website(url, output_dir, progress_callback=None):
     store_memory(url, "website_clone", f"Cloned to {clone_root}")
     return index_path, clone_root
 
+# ----------------------------------------------------------------------
+# Image intent detection
+# ----------------------------------------------------------------------
 def is_image_request(message):
-    keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of", "create a picture", "generate a photo", "sketch", "illustrate", "visualize", "nano banana", "paint a", "design an image"]
+    keywords = [
+        "draw", "generate image", "create an image", "generate a picture",
+        "make an image", "image of", "picture of", "create a picture",
+        "generate a photo", "sketch", "illustrate", "visualize",
+        "nano banana", "paint a", "design an image"
+    ]
     return any(kw in message.lower() for kw in keywords)
 
+# ----------------------------------------------------------------------
+# Flask routes
+# ----------------------------------------------------------------------
 @app.route("/")
 def index():
     return render_template('index.html')
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "api_key_set": bool(OPENROUTER_API_KEY), "default_text_model": DEFAULT_TEXT_MODEL, "image_model": IMAGE_MODEL, "image_model_paid": IMAGE_MODEL_PAID})
+    return jsonify({
+        "status": "ok",
+        "api_key_set": bool(OPENROUTER_API_KEY),
+        "default_text_model": DEFAULT_TEXT_MODEL,
+        "image_model": IMAGE_MODEL,
+        "image_model_paid": IMAGE_MODEL_PAID,
+    })
 
 @app.route("/models", methods=["GET"])
 def list_models():
@@ -599,6 +686,7 @@ def route_chat():
     data = request.get_json()
     message = data.get("message", "")
     requested_model = sanitize_model(data.get("model", DEFAULT_TEXT_MODEL))
+
     if is_image_request(message):
         save_path, error = generate_image_with_openrouter(message)
         if error:
@@ -606,26 +694,32 @@ def route_chat():
         image_url = f"/{save_path.replace(os.sep, '/')}"
         store_memory(message, "image_generation", f"Generated image at {save_path}")
         return jsonify({"reply": f"✅ Image generated!\n![Generated Image]({image_url})"})
+
     model = requested_model
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
         memory_context = "Relevant past memories:\n" + "\n".join(relevant) + "\n\n"
+
     name_match = re.search(r"(my name is|call me|i am) (\w+)", message, re.IGNORECASE)
     if name_match:
         user_name = name_match.group(2)
         store_memory(message, "personal_info", f"User's name is {user_name}")
         memory_context += f"IMPORTANT: The user's name is {user_name}. Always address them by name.\n"
+
     if re.search(r"(i like|i prefer|my favorite|i love)", message, re.IGNORECASE):
         store_memory(message, "preference", message)
+
     if 'conv_history' not in session:
         session['conv_history'] = []
     history = session['conv_history']
+
     prompt = "You are a helpful AI assistant that remembers past conversations.\n"
     prompt += memory_context
     for msg in history[-10:]:
         prompt += f"{msg['role']}: {msg['content']}\n"
     prompt += f"User: {message}\nAssistant:"
+
     reply, token_info = ask_openrouter(prompt, model=model, use_cache=False)
     store_memory(message, "chat_interaction", reply)
     history.append({"role": "user", "content": message})
@@ -686,7 +780,11 @@ def list_memories():
     memories = []
     if results and results['ids'] and results['ids'][0]:
         for i, doc_id in enumerate(results['ids'][0]):
-            mem = {"id": doc_id, "document": results['documents'][0][i], "metadata": results['metadatas'][0][i] if results['metadatas'] else {}}
+            mem = {
+                "id": doc_id,
+                "document": results['documents'][0][i],
+                "metadata": results['metadatas'][0][i] if results['metadatas'] else {}
+            }
             memories.append(mem)
     return jsonify({"memories": memories})
 
@@ -735,19 +833,28 @@ Summary:"""
         store_memory("memory_compression", "memory_summary", summary, metadata={"compressed": True, "original_count": len(to_compress)})
         ids_to_delete = [m["id"] for m in to_compress]
         memory_collection.delete(ids=ids_to_delete)
-        return jsonify({"message": f"Compressed {len(to_compress)} old memories into a summary.", "summary": summary, "deleted_count": len(to_compress)})
+        return jsonify({
+            "message": f"Compressed {len(to_compress)} old memories into a summary.",
+            "summary": summary,
+            "deleted_count": len(to_compress)
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ----------------------------------------------------------------------
+# Streaming smart agent
+# ----------------------------------------------------------------------
 @app.route("/stream_smart_agent", methods=["GET"])
 def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide = request.args.get("styleGuide", "")
     model = sanitize_model(request.args.get("model", DEFAULT_TEXT_MODEL))
+
     if not request_text:
         return Response(f"data: {json.dumps({'error': 'No request provided'})}\n\n", mimetype="text/event-stream")
 
     def generate():
+        # Image generation
         if is_image_request(request_text):
             save_path, error = generate_image_with_openrouter(request_text)
             if error:
@@ -759,6 +866,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
+        # Email plugin
         email_keywords = ["send an email", "send email", "email to", "mail to", "send a message to"]
         if any(kw in request_text.lower() for kw in email_keywords):
             args = {"to": "recipient@example.com"}
@@ -774,6 +882,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
+        # Screenshot plugin
         screenshot_keywords = ["screenshot", "take a screenshot", "capture screenshot", "screen capture"]
         if any(kw in request_text.lower() for kw in screenshot_keywords):
             url_match = re.search(r'(https?://[^\s]+)', request_text)
@@ -789,6 +898,7 @@ def stream_smart_agent():
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
+        # Tool routing
         memories = recall_memory(request_text, n_results=5)
         memory_context = "\n".join(memories) if memories else "No similar past tasks."
         plugins_info = get_plugins_info()
@@ -818,12 +928,13 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
 """
         decision_raw, _ = ask_openrouter(decision_prompt, model=model, use_cache=False)
         decision_text = strip_thinking_tags(decision_raw)
-        decision_text = re.sub(r'^`[^\n]*\n?', '', decision_text)
-        decision_text = re.sub(r'\n?`$', '', decision_text).strip()
+        decision_text = re.sub(r'^```[^\n]*\n?', '', decision_text)
+        decision_text = re.sub(r'\n?```$', '', decision_text).strip()
 
         try:
             decision = json.loads(decision_text)
         except:
+            # Fallback to chat if parsing fails
             decision = {"tool": "chat", "arguments": {"message": request_text}}
 
         decisions = [decision] if isinstance(decision, dict) else decision
@@ -835,6 +946,7 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
             args = action.get("arguments", {})
             yield f"data: {json.dumps({'step_start': tool, 'step_index': step_idx})}\n\n"
             error_occurred = False
+
             try:
                 if tool == "chat":
                     message = args.get("message", request_text)
@@ -888,9 +1000,17 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
                     res, token_info = generate_website(task, filename, style_guide, model)
                     if res.get("error"):
                         error_occurred = True
-                        yield f"data: {json.dumps({'error': res['error'], 'raw': res.get('raw')})}\n\n"
+                        data_obj = {"error": res["error"], "raw": res.get("raw")}
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                     else:
-                        yield f"data: {json.dumps({'result': f'Website saved to {res["path"]}', 'tool': 'website', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                        data_obj = {
+                            "result": "Website saved to " + res["path"],
+                            "tool": "website",
+                            "html_preview": res["html"][:500],
+                            "path": res["path"],
+                            "token_info": token_info
+                        }
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                         store_memory(request_text, tool, res.get("html", ""))
                 elif tool == "refine_html":
                     html_src = args.get("html", "")
@@ -900,7 +1020,14 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
                         error_occurred = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'result': f'Refined HTML saved to {res["path"]}', 'tool': 'refine_html', 'new_html_preview': res['new_html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                        data_obj = {
+                            "result": "Refined HTML saved to " + res["path"],
+                            "tool": "refine_html",
+                            "new_html_preview": res["new_html"][:500],
+                            "path": res["path"],
+                            "token_info": token_info
+                        }
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                         store_memory(request_text, tool, res.get("new_html", ""))
                 elif tool == "code_to_html":
                     code = args.get("code", "")
@@ -909,7 +1036,14 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
                         error_occurred = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'result': f'HTML saved to {res["path"]}', 'tool': 'code_to_html', 'html_preview': res['html'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                        data_obj = {
+                            "result": "HTML saved to " + res["path"],
+                            "tool": "code_to_html",
+                            "html_preview": res["html"][:500],
+                            "path": res["path"],
+                            "token_info": token_info
+                        }
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                         store_memory(request_text, tool, res.get("html", ""))
                 elif tool == "refine_code":
                     code_src = args.get("code", "")
@@ -919,7 +1053,13 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
                         error_occurred = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'result': 'Code refined', 'tool': 'refine_code', 'refined_code': res['refined_code'], 'token_info': token_info})}\n\n"
+                        data_obj = {
+                            "result": "Code refined",
+                            "tool": "refine_code",
+                            "refined_code": res["refined_code"],
+                            "token_info": token_info
+                        }
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                         store_memory(request_text, tool, res.get("refined_code", ""))
                 elif tool == "app_gen":
                     description = args.get("description", request_text)
@@ -930,7 +1070,14 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
                         error_occurred = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'result': f'App saved to {res["path"]}', 'tool': 'app_gen', 'code_preview': res['code'][:500], 'path': res['path'], 'token_info': token_info})}\n\n"
+                        data_obj = {
+                            "result": "App saved to " + res["path"],
+                            "tool": "app_gen",
+                            "code_preview": res["code"][:500],
+                            "path": res["path"],
+                            "token_info": token_info
+                        }
+                        yield f"data: {json.dumps(data_obj)}\n\n"
                         store_memory(request_text, tool, res.get("code", ""))
                 else:
                     error_occurred = True
@@ -938,9 +1085,11 @@ Output ONLY valid JSON (no markdown, no backticks, no extra text). If unsure, us
             except Exception as e:
                 error_occurred = True
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
             if error_occurred:
                 break
             step_idx += 1
+
         yield f"data: {json.dumps({'done': True})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
@@ -978,7 +1127,12 @@ def autocomplete():
     for pname, info in plugins.items():
         suggestions.add(info["name"])
         suggestions.add(f"Run plugin {info['name']}")
-    tool_commands = ["generate website", "refine html", "convert code to html", "refine code", "search web", "generate app", "clone website", "send email", "read emails", "organise files", "check weather", "review code", "make presentation", "create video"]
+    tool_commands = [
+        "generate website", "refine html", "convert code to html",
+        "refine code", "search web", "generate app", "clone website",
+        "send email", "read emails", "organise files", "check weather",
+        "review code", "make presentation", "create video"
+    ]
     for cmd in tool_commands:
         if cmd.startswith(prefix.lower()) or prefix.lower() in cmd:
             suggestions.add(cmd)
@@ -993,13 +1147,24 @@ def system_stats():
     ram_total_gb = memory.total / (1024 ** 3)
     gpu_info = {}
     try:
-        result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=2)
+        result = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total', '--format=csv,noheader,nounits'],
+                                capture_output=True, text=True, timeout=2)
         if result.returncode == 0:
             gpu_util, mem_used, mem_total = result.stdout.strip().split(', ')
-            gpu_info = {"gpu_percent": int(gpu_util), "gpu_mem_used_gb": float(mem_used) / 1024, "gpu_mem_total_gb": float(mem_total) / 1024}
+            gpu_info = {
+                "gpu_percent": int(gpu_util),
+                "gpu_mem_used_gb": float(mem_used) / 1024,
+                "gpu_mem_total_gb": float(mem_total) / 1024,
+            }
     except Exception:
         pass
-    return jsonify({"cpu_percent": cpu_percent, "ram_percent": ram_percent, "ram_used_gb": round(ram_used_gb, 1), "ram_total_gb": round(ram_total_gb, 1), "gpu": gpu_info})
+    return jsonify({
+        "cpu_percent": cpu_percent,
+        "ram_percent": ram_percent,
+        "ram_used_gb": round(ram_used_gb, 1),
+        "ram_total_gb": round(ram_total_gb, 1),
+        "gpu": gpu_info,
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
