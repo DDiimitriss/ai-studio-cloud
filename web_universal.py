@@ -38,10 +38,21 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "google/gemini-1.5-flash"  # free model
 
+def is_valid_openrouter_model(model):
+    """Check if model looks like a valid OpenRouter model ID."""
+    valid_prefixes = ("google/", "openai/", "meta-llama/", "anthropic/", "microsoft/", "cohere/", "mistralai/", "deepseek/")
+    return model.startswith(valid_prefixes)
+
 def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
     """Call OpenRouter API (supports many models, free tier)."""
     if not OPENROUTER_API_KEY:
         return "Error: OpenRouter API key not set. Please set OPENROUTER_API_KEY environment variable.", None
+    
+    # Ensure model is valid; fallback to default
+    if not is_valid_openrouter_model(model):
+        print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
+        model = DEFAULT_MODEL
+    
     if use_cache:
         cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
         if cache_key in _openrouter_cache:
@@ -75,6 +86,12 @@ def ask_openrouter_stream(prompt, model=DEFAULT_MODEL):
     if not OPENROUTER_API_KEY:
         yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
+    
+    # Ensure model is valid; fallback to default
+    if not is_valid_openrouter_model(model):
+        print(f"Warning: Invalid model '{model}' -> using default {DEFAULT_MODEL}")
+        model = DEFAULT_MODEL
+    
     try:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -392,7 +409,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": ["google/gemini-1.5-flash", "google/gemini-1.5-pro"]})
+    return jsonify({"models": ["google/gemini-1.5-flash", "google/gemini-1.5-pro", "openai/gpt-3.5-turbo"]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
