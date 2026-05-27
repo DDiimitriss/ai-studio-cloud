@@ -15,7 +15,6 @@ import chromadb
 from chromadb.utils import embedding_functions
 from duckduckgo_search import DDGS
 from playwright.sync_api import sync_playwright
-import google.generativeai as genai
 import psutil
 
 app = Flask(__name__)
@@ -33,53 +32,86 @@ def get_user_home():
 USER_HOME = get_user_home()
 
 # ----------------------------------------------------------------------
-# Gemini API key configuration
+# OpenRouter API configuration (free, no billing)
 # ----------------------------------------------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-if not GEMINI_API_KEY:
-    print("WARNING: GEMINI_API_KEY not set. AI will not work.")
-else:
-    genai.configure(api_key=GEMINI_API_KEY)
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_MODEL = "google/gemini-1.5-flash"  # free model
 
-# Gemini text generation (using stable model gemini-pro)
-def ask_gemini(prompt, model="gemini-pro", use_cache=True):
-    if not GEMINI_API_KEY:
-        return "Error: Gemini API key not set.", None
+def ask_openrouter(prompt, model=DEFAULT_MODEL, use_cache=True):
+    """Call OpenRouter API (supports many models, free tier)."""
+    if not OPENROUTER_API_KEY:
+        return "Error: OpenRouter API key not set. Please set OPENROUTER_API_KEY environment variable.", None
     if use_cache:
         cache_key = hashlib.md5((model + prompt).encode()).hexdigest()
-        if cache_key in _gemini_cache:
-            return _gemini_cache[cache_key], None
+        if cache_key in _openrouter_cache:
+            return _openrouter_cache[cache_key], None
     try:
-        gen_model = genai.GenerativeModel(model)
-        response = gen_model.generate_content(prompt)
-        reply = response.text
-        if use_cache:
-            if len(_gemini_cache) >= 50:
-                _gemini_cache.pop(next(iter(_gemini_cache)))
-            _gemini_cache[cache_key] = reply
-        token_info = {"duration": 0, "total_tokens": 0}
-        return reply, token_info
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        resp = requests.post(OPENROUTER_URL, headers=headers, json=data, timeout=60)
+        if resp.status_code == 200:
+            reply = resp.json()["choices"][0]["message"]["content"]
+            if use_cache:
+                if len(_openrouter_cache) >= 50:
+                    _openrouter_cache.pop(next(iter(_openrouter_cache)))
+                _openrouter_cache[cache_key] = reply
+            token_info = {"duration": 0, "total_tokens": 0}
+            return reply, token_info
+        else:
+            return f"OpenRouter error: {resp.status_code} - {resp.text}", None
     except Exception as e:
-        return f"Gemini error: {e}", None
+        return f"OpenRouter error: {str(e)}", None
 
-def ask_gemini_stream(prompt, model="gemini-pro"):
-    if not GEMINI_API_KEY:
-        yield f"data: {json.dumps({'error': 'Gemini API key not set'})}\n\n"
+def ask_openrouter_stream(prompt, model=DEFAULT_MODEL):
+    """Stream OpenRouter response token by token."""
+    if not OPENROUTER_API_KEY:
+        yield f"data: {json.dumps({'error': 'OpenRouter API key not set'})}\n\n"
         return
     try:
-        gen_model = genai.GenerativeModel(model)
-        response = gen_model.generate_content(prompt, stream=True)
-        for chunk in response:
-            if chunk.text:
-                yield f"data: {json.dumps({'token': chunk.text})}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True
+        }
+        with requests.post(OPENROUTER_URL, headers=headers, json=data, stream=True, timeout=120) as resp:
+            if resp.status_code != 200:
+                yield f"data: {json.dumps({'error': f'OpenRouter error {resp.status_code}'})}\n\n"
+                return
+            for line in resp.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith("data: "):
+                        line = line[6:]
+                        if line == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(line)
+                            if "choices" in chunk and len(chunk["choices"]) > 0:
+                                delta = chunk["choices"][0].get("delta", {})
+                                if "content" in delta:
+                                    yield f"data: {json.dumps({'token': delta['content']})}\n\n"
+                        except:
+                            continue
+            yield f"data: {json.dumps({'done': True})}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-_gemini_cache = {}
+_openrouter_cache = {}
 
 # ----------------------------------------------------------------------
-# ChromaDB persistent memory (using user home)
+# ChromaDB persistent memory
 # ----------------------------------------------------------------------
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
@@ -106,7 +138,7 @@ def recall_memory(query, n_results=3):
     return []
 
 # ----------------------------------------------------------------------
-# Plugin system (unchanged)
+# Plugin system
 # ----------------------------------------------------------------------
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
@@ -167,7 +199,7 @@ def clean_html(raw):
     return raw.strip()
 
 def save_file(content, filename, directory="Desktop"):
-    # In cloud, save to a local data folder instead of Desktop
+    # In cloud, save to a local data folder
     if not os.path.exists("data"):
         os.makedirs("data")
     path = os.path.join("data", filename)
@@ -180,9 +212,9 @@ def save_file(content, filename, directory="Desktop"):
     return path
 
 # ----------------------------------------------------------------------
-# Core tools (using Gemini)
+# Core tools (using OpenRouter)
 # ----------------------------------------------------------------------
-def generate_website(task, filename, style_guide, model="gemini-pro"):
+def generate_website(task, filename, style_guide, model=DEFAULT_MODEL):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
     prompt = f"""You are an expert front-end developer. The user asks: {task}
@@ -192,7 +224,7 @@ Similar past successful examples:
 Create a complete, standalone HTML page that implements a fully functional, beautiful website.
 Requirements: semantic HTML5, modern dark theme with neon accents, rounded corners, CSS Grid/Flexbox, vanilla JavaScript.
 Output ONLY the raw HTML code, starting with <!DOCTYPE html>. No triple backticks."""
-    response, token_info = ask_gemini(prompt, model=model)
+    response, token_info = ask_openrouter(prompt, model=model)
     clean = clean_html(response)
     html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
     if not html_match:
@@ -208,12 +240,12 @@ Output ONLY the raw HTML code, starting with <!DOCTYPE html>. No triple backtick
         return result, token_info
     return {"error": "Could not extract valid HTML", "raw": response}, token_info
 
-def refine_html(original_html, instruction, model="gemini-pro"):
+def refine_html(original_html, instruction, model=DEFAULT_MODEL):
     refine_prompt = f"""You are an expert front-end developer. Here is an HTML document:
 {original_html}
 The user wants: {instruction}
 Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No triple backticks."""
-    response, token_info = ask_gemini(refine_prompt, model=model)
+    response, token_info = ask_openrouter(refine_prompt, model=model)
     clean_refined = clean_html(response)
     html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean_refined, re.DOTALL | re.IGNORECASE)
     if not html_match:
@@ -226,13 +258,13 @@ Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No tri
         result = {"new_html": new_html, "path": saved_path, "error": None}
         store_memory(instruction, "html_refinement", result.get("new_html", ""))
         return result, token_info
-    return {"error": "Gemini did not return valid HTML", "raw": refined}, token_info
+    return {"error": "OpenRouter did not return valid HTML", "raw": refined}, token_info
 
-def convert_code_to_html(code, model="gemini-pro"):
+def convert_code_to_html(code, model=DEFAULT_MODEL):
     prompt = f"""You are a helpful assistant. The user provided code:
 ```{code}```
 Create a **complete, standalone HTML page** that displays this code nicely (syntax-highlighted) and explains what it does. Output ONLY raw HTML starting with <!DOCTYPE html>. No triple backticks."""
-    response, token_info = ask_gemini(prompt, model=model)
+    response, token_info = ask_openrouter(prompt, model=model)
     clean = clean_html(response)
     html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
     if not html_match:
@@ -247,12 +279,12 @@ Create a **complete, standalone HTML page** that displays this code nicely (synt
         return result, token_info
     return {"error": "Failed to generate valid HTML", "raw": response}, token_info
 
-def refine_code(code, instruction, model="gemini-pro"):
+def refine_code(code, instruction, model=DEFAULT_MODEL):
     prompt = f"""You are an expert programmer. The user provided code:
 ```{code}```
 The user wants: {instruction}
 Output ONLY the refined code, no explanations, no markdown, no triple backticks."""
-    response, token_info = ask_gemini(prompt, model=model)
+    response, token_info = ask_openrouter(prompt, model=model)
     refined = re.sub(r'^```[^\n]*\n?', '', response)
     refined = re.sub(r'\n?```$', '', refined)
     result = {"refined_code": refined, "error": None}
@@ -270,11 +302,11 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
-def generate_app(description, language, filename_base, model="gemini-pro"):
+def generate_app(description, language, filename_base, model=DEFAULT_MODEL):
     lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
     ext = lang_ext.get(language, ".txt")
     prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY the raw code, no backticks."
-    code, token_info = ask_gemini(prompt, model=model)
+    code, token_info = ask_openrouter(prompt, model=model)
     code = re.sub(r'^```[^\n]*\n?', '', code)
     code = re.sub(r'\n?```$', '', code)
     if not filename_base:
@@ -352,7 +384,7 @@ def clone_website(url, output_dir, progress_callback=None):
     return index_path, clone_root
 
 # ----------------------------------------------------------------------
-# Flask routes (most unchanged, using Gemini)
+# Flask routes (using OpenRouter)
 # ----------------------------------------------------------------------
 @app.route("/")
 def index():
@@ -360,7 +392,7 @@ def index():
 
 @app.route("/models", methods=["GET"])
 def list_models():
-    return jsonify({"models": ["gemini-pro", "gemini-1.5-pro"]})
+    return jsonify({"models": ["google/gemini-1.5-flash", "google/gemini-1.5-pro"]})
 
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins():
@@ -380,7 +412,7 @@ def route_generate():
     task = data.get("task", "")
     filename = data.get("filename", "website")
     style_guide = data.get("styleGuide", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     res, token_info = generate_website(task, filename, style_guide, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -391,7 +423,7 @@ def route_refine():
     data = request.get_json()
     original_html = data.get("html", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     res, token_info = refine_html(original_html, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -401,7 +433,7 @@ def route_refine():
 def route_convert_code():
     data = request.get_json()
     code = data.get("code", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     res, token_info = convert_code_to_html(code, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -412,7 +444,7 @@ def route_refine_code():
     data = request.get_json()
     code = data.get("code", "")
     instruction = data.get("instruction", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     res, token_info = refine_code(code, instruction, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -433,7 +465,7 @@ def route_generate_app():
     description = data.get("description", "")
     language = data.get("language", "python")
     filename = data.get("filename", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     res, token_info = generate_app(description, language, filename, model)
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
@@ -443,7 +475,7 @@ def route_generate_app():
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
-    model = data.get("model", "gemini-pro")
+    model = data.get("model", DEFAULT_MODEL)
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -463,7 +495,7 @@ def route_chat():
     for msg in history[-10:]:
         prompt += f"{msg['role']}: {msg['content']}\n"
     prompt += f"User: {message}\nAssistant:"
-    reply, token_info = ask_gemini(prompt, model=model, use_cache=False)
+    reply, token_info = ask_openrouter(prompt, model=model, use_cache=False)
     store_memory(message, "chat_interaction", reply)
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": reply})
@@ -576,7 +608,7 @@ Memories:
 {docs_text}
 
 Summary:"""
-        summary, _ = ask_gemini(summary_prompt, model="gemini-pro", use_cache=False)
+        summary, _ = ask_openrouter(summary_prompt, model=DEFAULT_MODEL, use_cache=False)
         summary = summary.strip()[:500]
         store_memory("memory_compression", "memory_summary", summary, metadata={"compressed": True, "original_count": len(to_compress)})
         ids_to_delete = [m["id"] for m in to_compress]
@@ -590,13 +622,13 @@ Summary:"""
         return jsonify({"error": str(e)}), 500
 
 # ----------------------------------------------------------------------
-# Streaming smart agent (using Gemini)
+# Streaming smart agent (using OpenRouter)
 # ----------------------------------------------------------------------
 @app.route("/stream_smart_agent", methods=["GET"])
 def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide = request.args.get("styleGuide", "")
-    model = request.args.get("model", "gemini-pro")
+    model = request.args.get("model", DEFAULT_MODEL)
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
@@ -663,7 +695,7 @@ Now respond with JSON only. No extra text.
 User request: "{request_text}"
 Style guide: {style_guide}
 """
-        decision_text, _ = ask_gemini(decision_prompt, model=model, use_cache=False)
+        decision_text, _ = ask_openrouter(decision_prompt, model=model, use_cache=False)
         try:
             decision = json.loads(decision_text)
         except:
@@ -686,7 +718,7 @@ Style guide: {style_guide}
                     mem = recall_memory(message, n_results=3)
                     mem_text = "\n".join(mem) if mem else ""
                     prompt = f"Memory:\n{mem_text}\n\nUser: {message}\nAssistant:"
-                    for chunk in ask_gemini_stream(prompt, model=model):
+                    for chunk in ask_openrouter_stream(prompt, model=model):
                         yield chunk
                 elif tool == "search":
                     query = args.get("query", request_text)
@@ -799,7 +831,7 @@ def favicon():
     return '', 204
 
 # ----------------------------------------------------------------------
-# Gemini image endpoint (disabled in cloud for simplicity)
+# Gemini image endpoint (disabled in cloud)
 # ----------------------------------------------------------------------
 @app.route("/gemini_image", methods=["POST"])
 def route_gemini_image():
@@ -864,5 +896,5 @@ def system_stats():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"\nStarting Qwen AI Studio (cloud version) on port {port}\n")
+    print(f"\nStarting Qwen AI Studio (cloud version with OpenRouter) on port {port}\n")
     app.run(debug=False, host="0.0.0.0", port=port)
