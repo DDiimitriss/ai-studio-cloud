@@ -17,6 +17,7 @@
 #  11. NEW: Full fallback chain for text models (never silently fails)
 #  12. NEW: Full fallback chain for image models (free → paid → error)
 #  13. NEW: /health endpoint shows active model + API key status
+#  14. FIX: AttributeError when decision list contains strings (filter dicts only)
 # =============================================================================
 
 import os
@@ -1058,10 +1059,8 @@ def stream_smart_agent():
             if err:
                 yield f"data: {json.dumps({'error': err})}\n\n"
             else:
-                img_url    = f"/{path.replace(os.sep, '/')}"
-                img_result = "✅ Image generated!\n![Generated Image](" + img_url + ")"
-                _payload   = json.dumps({"result": img_result, "path": path, "tool": "image_generation"})
-                yield f"data: {_payload}\n\n"
+                img_url = f"/{path.replace(os.sep, '/')}"
+                yield f"data: {json.dumps({'result': f'✅ Image generated!\\n![Generated Image]({img_url})', 'path': path, 'tool': 'image_generation'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
@@ -1129,7 +1128,7 @@ Style guide: {style_guide}
 """
         raw_decision, _ = ask_openrouter(decision_prompt, model=model, use_cache=False)
 
-        # FIX #8 – Check for API error before JSON parsing
+        # Check for API error before JSON parsing
         if (not raw_decision or
                 raw_decision.startswith("OpenRouter error") or
                 raw_decision.startswith("Error:") or
@@ -1138,7 +1137,7 @@ Style guide: {style_guide}
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
-        # FIX #7/#8 – Strip think tags and markdown fences before parsing
+        # Strip think tags and markdown fences before parsing
         clean = strip_thinking(raw_decision)
         clean = re.sub(r'^```[^\n]*\n?', '', clean)
         clean = re.sub(r'\n?```$', '', clean).strip()
@@ -1160,7 +1159,16 @@ Style guide: {style_guide}
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
 
-        decisions = [decision] if isinstance(decision, dict) else decision
+        # FIX #14: ensure we only have a list of dicts; discard strings
+        if isinstance(decision, dict):
+            decisions = [decision]
+        elif isinstance(decision, list):
+            decisions = [d for d in decision if isinstance(d, dict)]
+            if not decisions:
+                # fallback to chat if nothing usable
+                decisions = [{"tool": "chat", "arguments": {"message": request_text}}]
+        else:
+            decisions = [{"tool": "chat", "arguments": {"message": request_text}}]
 
         for step_idx, action in enumerate(decisions):
             tool = action.get("tool", "")
