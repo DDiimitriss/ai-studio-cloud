@@ -42,7 +42,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # ✅ Best free text model (fast, reliable, highly popular)
-DEFAULT_TEXT_MODEL = "qwen/qwen3.6-plus-preview:free"
+DEFAULT_TEXT_MODEL = "qwen/qwen3.6-plus:free"
 # ✅ Free image model – valid until October 2026
 IMAGE_MODEL = "google/gemini-2.5-flash-image"
 
