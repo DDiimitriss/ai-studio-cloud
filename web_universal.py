@@ -1058,8 +1058,10 @@ def stream_smart_agent():
             if err:
                 yield f"data: {json.dumps({'error': err})}\n\n"
             else:
-                img_url = f"/{path.replace(os.sep, '/')}"
-                yield f"data: {json.dumps({'result': f'✅ Image generated!\\n![Generated Image]({img_url})', 'path': path, 'tool': 'image_generation'})}\n\n"
+                img_url    = f"/{path.replace(os.sep, '/')}"
+                img_result = "✅ Image generated!\n![Generated Image](" + img_url + ")"
+                _payload   = json.dumps({"result": img_result, "path": path, "tool": "image_generation"})
+                yield f"data: {_payload}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
 
