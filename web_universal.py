@@ -10,6 +10,7 @@ import shutil
 import importlib.util
 import sys
 import tempfile
+import base64
 from flask import Flask, render_template, request, jsonify, session, Response, stream_with_context, send_from_directory
 from urllib.parse import urljoin, urlparse
 from duckduckgo_search import DDGS
@@ -25,7 +26,7 @@ PLAYWRIGHT_AVAILABLE = False
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"   # free, fast, reliable
-IMAGE_MODEL = "google/gemini-2.5-flash-image" # free image generation
+IMAGE_MODEL = "flux-schnell"                 # free image generation
 
 def ask_openrouter(prompt, model=None):
     if not OPENROUTER_API_KEY:
@@ -44,23 +45,25 @@ def ask_openrouter(prompt, model=None):
         return f"Error: {str(e)}", None
 
 def generate_image_with_openrouter(prompt, image_base64=None):
-    """Generate an image using Gemini 2.5 Flash (free)."""
+    """Generate an image using flux-schnell (free, fast, reliable)."""
     if not OPENROUTER_API_KEY:
         return None, "No API key"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    content_parts = [{"type": "text", "text": prompt}]
-    if image_base64:
-        if ',' in image_base64:
-            image_base64 = image_base64.split(',')[1]
-        content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}})
-    payload = {"model": IMAGE_MODEL, "messages": [{"role": "user", "content": content_parts}], "temperature": 0.7}
+    # flux-schnell expects a simple prompt
+    payload = {
+        "model": "flux-schnell",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
+    }
     try:
         resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=120)
         if resp.status_code != 200:
-            return None, f"HTTP {resp.status_code}"
-        msg = resp.json()["choices"][0]["message"]["content"]
-        # Extract image URL from response
-        url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', msg, re.IGNORECASE)
+            return None, f"HTTP {resp.status_code}: {resp.text}"
+        data = resp.json()
+        # OpenRouter returns image as base64 or URL
+        message = data["choices"][0]["message"]["content"]
+        # Try to extract image URL
+        url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', message, re.IGNORECASE)
         if url_match:
             img_url = url_match.group(1)
             img_resp = requests.get(img_url, timeout=30)
@@ -71,7 +74,17 @@ def generate_image_with_openrouter(prompt, image_base64=None):
                 with open(path, "wb") as f:
                     f.write(img_resp.content)
                 return path, None
-        return None, "No image URL found"
+        # If no URL, maybe it's base64
+        if "data:image" in message:
+            img_data = re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)', message)
+            if img_data:
+                os.makedirs("data", exist_ok=True)
+                fname = f"generated_image_{int(time.time())}.png"
+                path = os.path.join("data", fname)
+                with open(path, "wb") as f:
+                    f.write(base64.b64decode(img_data.group(1)))
+                return path, None
+        return None, f"No image URL or base64 found in response: {message[:200]}"
     except Exception as e:
         return None, str(e)
 
@@ -305,6 +318,20 @@ def stream_smart_agent():
                 yield f"data: {json.dumps({'error': error})}\n\n"
             else:
                 yield f"data: {json.dumps({'result': f'Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+        # Email plugin (if you have it)
+        email_keywords = ["send an email", "send email", "email to", "mail to"]
+        if any(kw in request_text.lower() for kw in email_keywords):
+            args = {"to": "recipient@example.com"}
+            email_match = re.search(r'[\w\.-]+@[\w\.-]+', request_text)
+            if email_match:
+                args["to"] = email_match.group(0)
+            res = run_plugin("email_sender", args)
+            if "error" in res:
+                yield f"data: {json.dumps({'error': res['error']})}\n\n"
+            else:
+                yield f"data: {json.dumps({'result': res.get('result', ''), 'tool': 'email_sender'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
         # Default: chat
