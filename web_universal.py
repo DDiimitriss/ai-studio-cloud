@@ -212,11 +212,30 @@ def web_search(query, model=None):
 def index():
     return render_template('index.html')
 
+@app.route('/data/<path:filename>')
+def serve_data(filename):
+    """Serve generated images from the data folder."""
+    return send_from_directory('data', filename)
+
 @app.route("/chat", methods=["POST"])
 def route_chat():
     data = request.get_json()
     message = data.get("message", "")
     model = data.get("model", DEFAULT_TEXT_MODEL)
+    
+    # FORCE image generation for drawing requests
+    image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a", "paint"]
+    if any(word in message.lower() for word in image_words):
+        print(f"[IMAGE] Generating image for: {message}")
+        save_path, error = generate_image_with_openrouter(message, None)
+        if error:
+            return jsonify({"reply": f"❌ Image failed: {error}"})
+        else:
+            # Return a clickable link to the image
+            image_url = f"/data/{os.path.basename(save_path)}"
+            return jsonify({"reply": f"🖼️ Here is your image: [Click to view]({image_url})\n\nSaved to: {save_path}"})
+    
+    # Normal chat flow
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -308,10 +327,9 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # FORCE image generation for ANY request with these words
+        # FORCE image generation for drawing requests (same as chat)
         image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a"]
         if any(word in request_text.lower() for word in image_words):
-            print(f"[IMAGE] Generating image for: {request_text}")
             save_path, error = generate_image_with_openrouter(request_text, None)
             if error:
                 yield f"data: {json.dumps({'error': f'Image failed: {error}'})}\n\n"
@@ -319,7 +337,7 @@ def stream_smart_agent():
                 yield f"data: {json.dumps({'result': f'🖼️ Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
-        # If not an image request, do chat
+        # Normal chat for non-image requests
         memories = recall_memory(request_text, n_results=3)
         memory_context = "\n".join(memories) if memories else ""
         prompt = f"Memory:\n{memory_context}\n\nUser: {request_text}\nAssistant:"
