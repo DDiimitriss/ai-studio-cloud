@@ -22,12 +22,12 @@ PLAYWRIGHT_AVAILABLE = False
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_TEXT_MODEL = "google/gemini-2.0-flash-001"
-IMAGE_MODEL = "google/gemini-2.5-flash-image"
+DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"
+IMAGE_MODEL = "openai/gpt-3.5-turbo"
 
 def ask_openrouter(prompt, model=None):
     if not OPENROUTER_API_KEY:
-        return "Error: OPENROUTER_API_KEY not set.", None
+        return "Error: OPENROUTER_API_KEY not set. Add it in Railway variables.", None
     if model is None:
         model = DEFAULT_TEXT_MODEL
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
@@ -42,36 +42,8 @@ def ask_openrouter(prompt, model=None):
         return f"Error: {str(e)}", None
 
 def generate_image_with_openrouter(prompt, image_base64=None):
-    if not OPENROUTER_API_KEY:
-        return None, "No API key"
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    content_parts = [{"type": "text", "text": prompt}]
-    if image_base64:
-        if ',' in image_base64:
-            image_base64 = image_base64.split(',')[1]
-        content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}})
-    payload = {"model": IMAGE_MODEL, "messages": [{"role": "user", "content": content_parts}], "temperature": 0.7}
-    try:
-        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=120)
-        if resp.status_code != 200:
-            return None, f"HTTP {resp.status_code}"
-        msg = resp.json()["choices"][0]["message"]["content"]
-        url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', msg, re.IGNORECASE)
-        if url_match:
-            img_url = url_match.group(1)
-            img_resp = requests.get(img_url, timeout=30)
-            if img_resp.status_code == 200:
-                os.makedirs("data", exist_ok=True)
-                fname = f"generated_image_{int(time.time())}.png"
-                path = os.path.join("data", fname)
-                with open(path, "wb") as f:
-                    f.write(img_resp.content)
-                return path, None
-        return None, "No image URL found"
-    except Exception as e:
-        return None, str(e)
+    return None, "Image generation disabled (text mode only)."
 
-# ----- Simple session memory (no ChromaDB) -----
 def store_memory(user_input, action, output):
     if 'memories' not in session:
         session['memories'] = []
@@ -96,7 +68,6 @@ def recall_memory(query, n_results=3):
                 break
     return results
 
-# ----- Plugin system (same as before) -----
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
 init_path = os.path.join(PLUGINS_DIR, "__init__.py")
@@ -126,7 +97,7 @@ def load_plugins():
                         info["description"] = f"Plugin {module_name}"
                     _plugins[info["name"].lower().replace(" ", "_")] = info
             except Exception as e:
-                print(f"[Plugin] Error loading {filename}: {e}")
+                print(f"Plugin error {filename}: {e}")
 
 load_plugins()
 
@@ -142,7 +113,6 @@ def run_plugin(plugin_name, args):
     except Exception as e:
         return {"error": str(e)}
 
-# ----- Helpers -----
 def clean_html(raw):
     raw = re.sub(r'^```[^\n]*\n?', '', raw)
     raw = re.sub(r'\n?```$', '', raw)
@@ -161,15 +131,10 @@ def save_file(content, filename):
             f.write(content)
     return path
 
-# ----- Core tools (simplified, memory via session) -----
 def generate_website(task, filename, style_guide, model=None):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
-    prompt = f"""You are an expert front-end developer. The user asks: {task}
-Follow this style guide: {style_guide}
-Similar past successful examples:
-{memory_context}
-Create a complete, standalone HTML page. Output ONLY raw HTML starting with <!DOCTYPE html>. No backticks."""
+    prompt = f"Create a complete HTML page. Task: {task}\nStyle: {style_guide}\nMemory: {memory_context}\nOutput ONLY raw HTML starting with <!DOCTYPE html>."
     response, _ = ask_openrouter(prompt, model=model)
     clean = clean_html(response)
     html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
@@ -185,54 +150,6 @@ Create a complete, standalone HTML page. Output ONLY raw HTML starting with <!DO
         return {"html": html_content, "path": saved_path}, None
     return {"error": "Could not extract valid HTML", "raw": response}, None
 
-def refine_html(original_html, instruction, model=None):
-    refine_prompt = f"""You are an expert front-end developer. Here is an HTML document:
-{original_html}
-The user wants: {instruction}
-Output the **complete** refined HTML code, starting with <!DOCTYPE html>. No triple backticks."""
-    response, _ = ask_openrouter(refine_prompt, model=model)
-    clean = clean_html(response)
-    html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
-    if not html_match:
-        html_match = re.search(r'<html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
-    if html_match:
-        new_html = html_match.group(0)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"refined_{timestamp}.html"
-        saved_path = save_file(new_html, filename)
-        store_memory(instruction, "html_refinement", new_html[:200])
-        return {"new_html": new_html, "path": saved_path}, None
-    return {"error": "No valid HTML", "raw": response}, None
-
-def convert_code_to_html(code, model=None):
-    prompt = f"""You are a helpful assistant. The user provided code:
-```{code}```
-Create a **complete, standalone HTML page** that displays this code nicely. Output ONLY raw HTML starting with <!DOCTYPE html>. No backticks."""
-    response, _ = ask_openrouter(prompt, model=model)
-    clean = clean_html(response)
-    html_match = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
-    if not html_match:
-        html_match = re.search(r'<html[^>]*>.*?</html>', clean, re.DOTALL | re.IGNORECASE)
-    if html_match:
-        html_content = html_match.group(0)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"code_display_{timestamp}.html"
-        saved_path = save_file(html_content, filename)
-        store_memory(code[:100], "code_to_html", html_content[:200])
-        return {"html": html_content, "path": saved_path}, None
-    return {"error": "Failed", "raw": response}, None
-
-def refine_code(code, instruction, model=None):
-    prompt = f"""You are an expert programmer. The user provided code:
-```{code}```
-The user wants: {instruction}
-Output ONLY the refined code, no explanations, no backticks."""
-    response, _ = ask_openrouter(prompt, model=model)
-    refined = re.sub(r'^```[^\n]*\n?', '', response)
-    refined = re.sub(r'\n?```$', '', refined)
-    store_memory(instruction, "code_refinement", refined[:200])
-    return {"refined_code": refined}, None
-
 def web_search(query, model=None):
     try:
         with DDGS() as ddgs:
@@ -243,108 +160,9 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
-def generate_app(description, language, filename_base, model=None):
-    lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
-    ext = lang_ext.get(language, ".txt")
-    prompt = f"You are a senior software engineer. The user wants: {description}\nGenerate complete, ready-to-run code in {language}. Output ONLY raw code, no backticks."
-    code, _ = ask_openrouter(prompt, model=model)
-    code = re.sub(r'^```[^\n]*\n?', '', code)
-    code = re.sub(r'\n?```$', '', code)
-    if not filename_base:
-        words = re.findall(r'\b\w+\b', description.lower())
-        base = "_".join(words[:3]) if words else "app"
-    else:
-        base = re.sub(r'[\\/*?:"<>|]', "", filename_base)
-    filename = f"{base}{ext}"
-    saved_path = save_file(code, filename)
-    store_memory(description, "app_generation", code[:200])
-    return {"code": code, "path": saved_path}, None
-
-# ----- Flask routes -----
 @app.route("/")
 def index():
     return render_template('index.html')
-
-@app.route("/models", methods=["GET"])
-def list_models():
-    return jsonify({"models": [DEFAULT_TEXT_MODEL, IMAGE_MODEL]})
-
-@app.route("/list_plugins", methods=["GET"])
-def list_plugins_route():
-    return jsonify({"plugins": get_plugins_info()})
-
-@app.route("/run_plugin", methods=["POST"])
-def run_plugin_route():
-    data = request.get_json()
-    plugin_name = data.get("plugin")
-    args = data.get("args", {})
-    result = run_plugin(plugin_name, args)
-    return jsonify(result)
-
-@app.route("/generate", methods=["POST"])
-def route_generate():
-    data = request.get_json()
-    task = data.get("task", "")
-    filename = data.get("filename", "website")
-    style_guide = data.get("styleGuide", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
-    res, _ = generate_website(task, filename, style_guide, model)
-    if res.get("error"):
-        return jsonify({"error": res["error"], "raw": res.get("raw")})
-    return jsonify({"html": res["html"], "path": res["path"]})
-
-@app.route("/refine", methods=["POST"])
-def route_refine():
-    data = request.get_json()
-    original_html = data.get("html", "")
-    instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
-    res, _ = refine_html(original_html, instruction, model)
-    if res.get("error"):
-        return jsonify({"error": res["error"], "raw": res.get("raw")})
-    return jsonify({"new_html": res["new_html"], "path": res["path"]})
-
-@app.route("/convert_code", methods=["POST"])
-def route_convert_code():
-    data = request.get_json()
-    code = data.get("code", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
-    res, _ = convert_code_to_html(code, model)
-    if res.get("error"):
-        return jsonify({"error": res["error"], "raw": res.get("raw")})
-    return jsonify({"html": res["html"], "path": res["path"]})
-
-@app.route("/refine_code", methods=["POST"])
-def route_refine_code():
-    data = request.get_json()
-    code = data.get("code", "")
-    instruction = data.get("instruction", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
-    res, _ = refine_code(code, instruction, model)
-    if res.get("error"):
-        return jsonify({"error": res["error"], "raw": res.get("raw")})
-    return jsonify({"refined_code": res["refined_code"]})
-
-@app.route("/search", methods=["POST"])
-def route_search():
-    data = request.get_json()
-    query = data.get("query", "")
-    res, _ = web_search(query)
-    if res.get("error"):
-        return jsonify({"error": res["error"]})
-    return jsonify({"results": res["results"]})
-
-@app.route("/generate_app", methods=["POST"])
-def route_generate_app():
-    data = request.get_json()
-    description = data.get("description", "")
-    language = data.get("language", "python")
-    filename = data.get("filename", "")
-    model = data.get("model", DEFAULT_TEXT_MODEL)
-    res, _ = generate_app(description, language, filename, model)
-    if res.get("error"):
-        return jsonify({"error": res["error"], "raw": res.get("raw")})
-    return jsonify({"code": res["code"], "path": res["path"]})
 
 @app.route("/chat", methods=["POST"])
 def route_chat():
@@ -355,11 +173,6 @@ def route_chat():
     memory_context = ""
     if relevant:
         memory_context = "Relevant past memories:\n" + "\n".join(relevant) + "\n\n"
-    name_match = re.search(r"(my name is|call me|i am) (\w+)", message, re.IGNORECASE)
-    if name_match:
-        user_name = name_match.group(2)
-        store_memory(message, "personal_info", f"User's name is {user_name}")
-        memory_context += f"IMPORTANT: The user's name is {user_name}.\n"
     if 'conv_history' not in session:
         session['conv_history'] = []
     history = session['conv_history']
@@ -380,40 +193,38 @@ def clear_chat():
     session.pop('memories', None)
     return jsonify({"status": "cleared"})
 
-@app.route("/gemini_image", methods=["POST"])
-def route_gemini_image():
+@app.route("/search", methods=["POST"])
+def route_search():
     data = request.get_json()
-    prompt = data.get("prompt", "")
-    image_base64 = data.get("image", None)
-    if not prompt:
-        return jsonify({"error": "No prompt"})
-    save_path, error = generate_image_with_openrouter(prompt, image_base64)
-    if error:
-        return jsonify({"error": error})
-    return jsonify({"path": save_path, "status": "success"})
+    query = data.get("query", "")
+    res, _ = web_search(query)
+    if res.get("error"):
+        return jsonify({"error": res["error"]})
+    return jsonify({"results": res["results"]})
 
-@app.route("/autocomplete", methods=["GET"])
-def autocomplete():
-    prefix = request.args.get("prefix", "").strip()
-    if not prefix or len(prefix) < 2:
-        return jsonify({"suggestions": []})
-    suggestions = set()
-    memories = recall_memory(prefix, n_results=5)
-    for mem in memories:
-        match = re.search(r"User: (.*?)(?:\n|$)", mem)
-        if match:
-            user_input = match.group(1).strip()
-            if user_input:
-                suggestions.add(user_input[:100])
-    plugins = get_plugins_info()
-    for pname, info in plugins.items():
-        suggestions.add(info["name"])
-    tool_commands = ["generate website", "refine html", "convert code", "refine code", "search web", "generate app"]
-    for cmd in tool_commands:
-        if cmd.startswith(prefix.lower()) or prefix.lower() in cmd:
-            suggestions.add(cmd)
-    suggestions = sorted(suggestions)[:10]
-    return jsonify({"suggestions": suggestions})
+@app.route("/generate", methods=["POST"])
+def route_generate():
+    data = request.get_json()
+    task = data.get("task", "")
+    filename = data.get("filename", "website")
+    style_guide = data.get("styleGuide", "")
+    model = data.get("model", DEFAULT_TEXT_MODEL)
+    res, _ = generate_website(task, filename, style_guide, model)
+    if res.get("error"):
+        return jsonify({"error": res["error"], "raw": res.get("raw")})
+    return jsonify({"html": res["html"], "path": res["path"]})
+
+@app.route("/list_plugins", methods=["GET"])
+def list_plugins_route():
+    return jsonify({"plugins": get_plugins_info()})
+
+@app.route("/run_plugin", methods=["POST"])
+def run_plugin_route():
+    data = request.get_json()
+    plugin_name = data.get("plugin")
+    args = data.get("args", {})
+    result = run_plugin(plugin_name, args)
+    return jsonify(result)
 
 @app.route("/system_stats", methods=["GET"])
 def system_stats():
@@ -437,31 +248,6 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # Image generation keywords
-        image_keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of"]
-        if any(kw in request_text.lower() for kw in image_keywords):
-            save_path, error = generate_image_with_openrouter(request_text, None)
-            if error:
-                yield f"data: {json.dumps({'error': error})}\n\n"
-            else:
-                yield f"data: {json.dumps({'result': f'Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
-            yield f"data: {json.dumps({'done': True})}\n\n"
-            return
-        # Email plugin
-        email_keywords = ["send an email", "send email", "email to", "mail to"]
-        if any(kw in request_text.lower() for kw in email_keywords):
-            args = {"to": "recipient@example.com"}
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+', request_text)
-            if email_match:
-                args["to"] = email_match.group(0)
-            res = run_plugin("email_sender", args)
-            if "error" in res:
-                yield f"data: {json.dumps({'error': res['error']})}\n\n"
-            else:
-                yield f"data: {json.dumps({'result': res.get('result', ''), 'tool': 'email_sender'})}\n\n"
-            yield f"data: {json.dumps({'done': True})}\n\n"
-            return
-        # Default: chat
         memories = recall_memory(request_text, n_results=3)
         memory_context = "\n".join(memories) if memories else ""
         prompt = f"Memory:\n{memory_context}\n\nUser: {request_text}\nAssistant:"
@@ -471,43 +257,7 @@ def stream_smart_agent():
         store_memory(request_text, "smart_agent", reply)
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
-@app.route('/favicon.ico')
-def favicon():
-    return '', 204
-
-# ----- Backup without ChromaDB -----
-@app.route("/backup_memory", methods=["POST"])
-def backup_memory():
-    if 'memories' not in session:
-        return jsonify({"error": "No memories"}), 400
-    try:
-        backup_dir = os.path.join(os.environ.get("USERPROFILE", os.path.expanduser("~")), "Desktop", "studio_backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        backup_name = f"memory_backup_{timestamp}.json"
-        backup_path = os.path.join(backup_dir, backup_name)
-        with open(backup_path, "w") as f:
-            json.dump(session['memories'], f)
-        return jsonify({"status": "success", "path": backup_path})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/restore_memory", methods=["POST"])
-def restore_memory():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file"}), 400
-    file = request.files['file']
-    if not file.filename.endswith('.json'):
-        return jsonify({"error": "Need .json file"}), 400
-    try:
-        data = json.load(file)
-        session['memories'] = data
-        return jsonify({"status": "success", "message": "Memory restored"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"\n🚀 AI Studio starting on port {port}")
-    print(f"☁️ No ChromaDB – using session memory (safe for Railway)")
     app.run(debug=False, host="0.0.0.0", port=port)
