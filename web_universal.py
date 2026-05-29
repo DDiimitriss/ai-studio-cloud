@@ -18,12 +18,14 @@ import psutil
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+# Disable Playwright (to avoid crashes on Railway)
 PLAYWRIGHT_AVAILABLE = False
 
+# OpenRouter settings
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"
-IMAGE_MODEL = "openai/gpt-3.5-turbo"
+DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"   # free, fast, reliable
+IMAGE_MODEL = "google/gemini-2.5-flash-image" # free image generation
 
 def ask_openrouter(prompt, model=None):
     if not OPENROUTER_API_KEY:
@@ -42,8 +44,38 @@ def ask_openrouter(prompt, model=None):
         return f"Error: {str(e)}", None
 
 def generate_image_with_openrouter(prompt, image_base64=None):
-    return None, "Image generation disabled (text mode only)."
+    """Generate an image using Gemini 2.5 Flash (free)."""
+    if not OPENROUTER_API_KEY:
+        return None, "No API key"
+    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    content_parts = [{"type": "text", "text": prompt}]
+    if image_base64:
+        if ',' in image_base64:
+            image_base64 = image_base64.split(',')[1]
+        content_parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}})
+    payload = {"model": IMAGE_MODEL, "messages": [{"role": "user", "content": content_parts}], "temperature": 0.7}
+    try:
+        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=120)
+        if resp.status_code != 200:
+            return None, f"HTTP {resp.status_code}"
+        msg = resp.json()["choices"][0]["message"]["content"]
+        # Extract image URL from response
+        url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', msg, re.IGNORECASE)
+        if url_match:
+            img_url = url_match.group(1)
+            img_resp = requests.get(img_url, timeout=30)
+            if img_resp.status_code == 200:
+                os.makedirs("data", exist_ok=True)
+                fname = f"generated_image_{int(time.time())}.png"
+                path = os.path.join("data", fname)
+                with open(path, "wb") as f:
+                    f.write(img_resp.content)
+                return path, None
+        return None, "No image URL found"
+    except Exception as e:
+        return None, str(e)
 
+# ----- Simple session memory (no ChromaDB) -----
 def store_memory(user_input, action, output):
     if 'memories' not in session:
         session['memories'] = []
@@ -68,6 +100,7 @@ def recall_memory(query, n_results=3):
                 break
     return results
 
+# ----- Plugin system (gracefully skip missing modules) -----
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
 init_path = os.path.join(PLUGINS_DIR, "__init__.py")
@@ -96,8 +129,9 @@ def load_plugins():
                         info["name"] = module_name.replace("_", " ").title()
                         info["description"] = f"Plugin {module_name}"
                     _plugins[info["name"].lower().replace(" ", "_")] = info
+                    print(f"[Plugin] Loaded: {info['name']}")
             except Exception as e:
-                print(f"Plugin error {filename}: {e}")
+                print(f"[Plugin] Error loading {filename}: {e}")
 
 load_plugins()
 
@@ -113,6 +147,7 @@ def run_plugin(plugin_name, args):
     except Exception as e:
         return {"error": str(e)}
 
+# ----- Helper functions -----
 def clean_html(raw):
     raw = re.sub(r'^```[^\n]*\n?', '', raw)
     raw = re.sub(r'\n?```$', '', raw)
@@ -131,6 +166,7 @@ def save_file(content, filename):
             f.write(content)
     return path
 
+# ----- Core tools -----
 def generate_website(task, filename, style_guide, model=None):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
@@ -160,6 +196,7 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
+# ----- Flask routes -----
 @app.route("/")
 def index():
     return render_template('index.html')
@@ -214,6 +251,18 @@ def route_generate():
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"html": res["html"], "path": res["path"]})
 
+@app.route("/gemini_image", methods=["POST"])
+def route_gemini_image():
+    data = request.get_json()
+    prompt = data.get("prompt", "")
+    image_base64 = data.get("image", None)
+    if not prompt:
+        return jsonify({"error": "No prompt"})
+    save_path, error = generate_image_with_openrouter(prompt, image_base64)
+    if error:
+        return jsonify({"error": error})
+    return jsonify({"path": save_path, "status": "success"})
+
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins_route():
     return jsonify({"plugins": get_plugins_info()})
@@ -248,6 +297,17 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
+        # Check for image generation keywords
+        image_keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of"]
+        if any(kw in request_text.lower() for kw in image_keywords):
+            save_path, error = generate_image_with_openrouter(request_text, None)
+            if error:
+                yield f"data: {json.dumps({'error': error})}\n\n"
+            else:
+                yield f"data: {json.dumps({'result': f'Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+        # Default: chat
         memories = recall_memory(request_text, n_results=3)
         memory_context = "\n".join(memories) if memories else ""
         prompt = f"Memory:\n{memory_context}\n\nUser: {request_text}\nAssistant:"
@@ -260,4 +320,5 @@ def stream_smart_agent():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"\n🚀 AI Studio starting on port {port}")
+    print(f"✅ Image generation enabled with {IMAGE_MODEL}")
     app.run(debug=False, host="0.0.0.0", port=port)
