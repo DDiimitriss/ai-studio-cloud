@@ -49,7 +49,6 @@ def generate_image_with_openrouter(prompt, image_base64=None):
     if not OPENROUTER_API_KEY:
         return None, "No API key"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    # flux-schnell expects a simple prompt
     payload = {
         "model": "flux-schnell",
         "messages": [{"role": "user", "content": prompt}],
@@ -60,7 +59,6 @@ def generate_image_with_openrouter(prompt, image_base64=None):
         if resp.status_code != 200:
             return None, f"HTTP {resp.status_code}: {resp.text}"
         data = resp.json()
-        # OpenRouter returns image as base64 or URL
         message = data["choices"][0]["message"]["content"]
         # Try to extract image URL
         url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', message, re.IGNORECASE)
@@ -310,31 +308,18 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # Check for image generation keywords
-        image_keywords = ["draw", "generate image", "create an image", "generate a picture", "make an image", "image of", "picture of"]
-        if any(kw in request_text.lower() for kw in image_keywords):
+        # FORCE image generation for ANY request with these words
+        image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a"]
+        if any(word in request_text.lower() for word in image_words):
+            print(f"[IMAGE] Generating image for: {request_text}")
             save_path, error = generate_image_with_openrouter(request_text, None)
             if error:
-                yield f"data: {json.dumps({'error': error})}\n\n"
+                yield f"data: {json.dumps({'error': f'Image failed: {error}'})}\n\n"
             else:
-                yield f"data: {json.dumps({'result': f'Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
+                yield f"data: {json.dumps({'result': f'🖼️ Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
-        # Email plugin (if you have it)
-        email_keywords = ["send an email", "send email", "email to", "mail to"]
-        if any(kw in request_text.lower() for kw in email_keywords):
-            args = {"to": "recipient@example.com"}
-            email_match = re.search(r'[\w\.-]+@[\w\.-]+', request_text)
-            if email_match:
-                args["to"] = email_match.group(0)
-            res = run_plugin("email_sender", args)
-            if "error" in res:
-                yield f"data: {json.dumps({'error': res['error']})}\n\n"
-            else:
-                yield f"data: {json.dumps({'result': res.get('result', ''), 'tool': 'email_sender'})}\n\n"
-            yield f"data: {json.dumps({'done': True})}\n\n"
-            return
-        # Default: chat
+        # If not an image request, do chat
         memories = recall_memory(request_text, n_results=3)
         memory_context = "\n".join(memories) if memories else ""
         prompt = f"Memory:\n{memory_context}\n\nUser: {request_text}\nAssistant:"
