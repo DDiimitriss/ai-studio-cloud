@@ -26,7 +26,7 @@ PLAYWRIGHT_AVAILABLE = False
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"   # free, fast, reliable
-IMAGE_MODEL = "flux-schnell"                 # free image generation
+IMAGE_MODEL = "black-forest-labs/flux-schnell" # correct ID for free image generation
 
 def ask_openrouter(prompt, model=None):
     if not OPENROUTER_API_KEY:
@@ -45,12 +45,13 @@ def ask_openrouter(prompt, model=None):
         return f"Error: {str(e)}", None
 
 def generate_image_with_openrouter(prompt, image_base64=None):
-    """Generate an image using flux-schnell (free, fast, reliable)."""
+    """Generate an image using Flux Schnell (free, reliable)."""
     if not OPENROUTER_API_KEY:
         return None, "No API key"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
+    # Use the correct model ID
     payload = {
-        "model": "flux-schnell",
+        "model": "black-forest-labs/flux-schnell",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }
@@ -231,7 +232,6 @@ def route_chat():
         if error:
             return jsonify({"reply": f"❌ Image failed: {error}"})
         else:
-            # Return a clickable link to the image
             image_url = f"/data/{os.path.basename(save_path)}"
             return jsonify({"reply": f"🖼️ Here is your image: [Click to view]({image_url})\n\nSaved to: {save_path}"})
     
@@ -327,7 +327,7 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # FORCE image generation for drawing requests (same as chat)
+        # FORCE image generation for drawing requests
         image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a"]
         if any(word in request_text.lower() for word in image_words):
             save_path, error = generate_image_with_openrouter(request_text, None)
