@@ -19,18 +19,16 @@ import psutil
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Disable Playwright (to avoid crashes on Railway)
 PLAYWRIGHT_AVAILABLE = False
 
-# OpenRouter settings
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"   # free, fast, reliable
-IMAGE_MODEL = "black-forest-labs/flux-schnell" # correct ID for free image generation
+DEFAULT_TEXT_MODEL = "openai/gpt-3.5-turbo"
+IMAGE_MODEL = "google/gemini-2.0-flash-exp-image-generation"   # ✅ working free model
 
 def ask_openrouter(prompt, model=None):
     if not OPENROUTER_API_KEY:
-        return "Error: OPENROUTER_API_KEY not set. Add it in Railway variables.", None
+        return "Error: OPENROUTER_API_KEY not set.", None
     if model is None:
         model = DEFAULT_TEXT_MODEL
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
@@ -45,13 +43,11 @@ def ask_openrouter(prompt, model=None):
         return f"Error: {str(e)}", None
 
 def generate_image_with_openrouter(prompt, image_base64=None):
-    """Generate an image using Flux Schnell (free, reliable)."""
     if not OPENROUTER_API_KEY:
         return None, "No API key"
     headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    # Use the correct model ID
     payload = {
-        "model": "black-forest-labs/flux-schnell",
+        "model": "google/gemini-2.0-flash-exp-image-generation",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }
@@ -61,7 +57,6 @@ def generate_image_with_openrouter(prompt, image_base64=None):
             return None, f"HTTP {resp.status_code}: {resp.text}"
         data = resp.json()
         message = data["choices"][0]["message"]["content"]
-        # Try to extract image URL
         url_match = re.search(r'(https?://[^\s]+\.(png|jpg|jpeg|gif|webp))', message, re.IGNORECASE)
         if url_match:
             img_url = url_match.group(1)
@@ -73,7 +68,6 @@ def generate_image_with_openrouter(prompt, image_base64=None):
                 with open(path, "wb") as f:
                     f.write(img_resp.content)
                 return path, None
-        # If no URL, maybe it's base64
         if "data:image" in message:
             img_data = re.search(r'data:image/png;base64,([A-Za-z0-9+/=]+)', message)
             if img_data:
@@ -83,11 +77,11 @@ def generate_image_with_openrouter(prompt, image_base64=None):
                 with open(path, "wb") as f:
                     f.write(base64.b64decode(img_data.group(1)))
                 return path, None
-        return None, f"No image URL or base64 found in response: {message[:200]}"
+        return None, f"No image URL or base64 found: {message[:200]}"
     except Exception as e:
         return None, str(e)
 
-# ----- Simple session memory (no ChromaDB) -----
+# ----- session memory (no ChromaDB) -----
 def store_memory(user_input, action, output):
     if 'memories' not in session:
         session['memories'] = []
@@ -112,7 +106,7 @@ def recall_memory(query, n_results=3):
                 break
     return results
 
-# ----- Plugin system (gracefully skip missing modules) -----
+# ----- plugins (skip missing) -----
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
 init_path = os.path.join(PLUGINS_DIR, "__init__.py")
@@ -159,7 +153,6 @@ def run_plugin(plugin_name, args):
     except Exception as e:
         return {"error": str(e)}
 
-# ----- Helper functions -----
 def clean_html(raw):
     raw = re.sub(r'^```[^\n]*\n?', '', raw)
     raw = re.sub(r'\n?```$', '', raw)
@@ -178,7 +171,6 @@ def save_file(content, filename):
             f.write(content)
     return path
 
-# ----- Core tools -----
 def generate_website(task, filename, style_guide, model=None):
     memories = recall_memory("website " + task, n_results=2)
     memory_context = "\n".join(memories) if memories else ""
@@ -208,14 +200,12 @@ def web_search(query, model=None):
     except Exception as e:
         return {"error": str(e)}, None
 
-# ----- Flask routes -----
 @app.route("/")
 def index():
     return render_template('index.html')
 
 @app.route('/data/<path:filename>')
 def serve_data(filename):
-    """Serve generated images from the data folder."""
     return send_from_directory('data', filename)
 
 @app.route("/chat", methods=["POST"])
@@ -224,7 +214,6 @@ def route_chat():
     message = data.get("message", "")
     model = data.get("model", DEFAULT_TEXT_MODEL)
     
-    # FORCE image generation for drawing requests
     image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a", "paint"]
     if any(word in message.lower() for word in image_words):
         print(f"[IMAGE] Generating image for: {message}")
@@ -233,9 +222,8 @@ def route_chat():
             return jsonify({"reply": f"❌ Image failed: {error}"})
         else:
             image_url = f"/data/{os.path.basename(save_path)}"
-            return jsonify({"reply": f"🖼️ Here is your image: [Click to view]({image_url})\n\nSaved to: {save_path}"})
+            return jsonify({"reply": f"🖼️ Here is your image: [Click to view]({image_url})"})
     
-    # Normal chat flow
     relevant = recall_memory(message, n_results=5)
     memory_context = ""
     if relevant:
@@ -281,18 +269,6 @@ def route_generate():
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"html": res["html"], "path": res["path"]})
 
-@app.route("/gemini_image", methods=["POST"])
-def route_gemini_image():
-    data = request.get_json()
-    prompt = data.get("prompt", "")
-    image_base64 = data.get("image", None)
-    if not prompt:
-        return jsonify({"error": "No prompt"})
-    save_path, error = generate_image_with_openrouter(prompt, image_base64)
-    if error:
-        return jsonify({"error": error})
-    return jsonify({"path": save_path, "status": "success"})
-
 @app.route("/list_plugins", methods=["GET"])
 def list_plugins_route():
     return jsonify({"plugins": get_plugins_info()})
@@ -327,7 +303,6 @@ def stream_smart_agent():
     if not request_text:
         return Response("data: {}\n\n".format(json.dumps({"error": "No request"})), mimetype="text/event-stream")
     def generate():
-        # FORCE image generation for drawing requests
         image_words = ["draw", "generate image", "create an image", "picture of", "image of", "make a picture", "draw a"]
         if any(word in request_text.lower() for word in image_words):
             save_path, error = generate_image_with_openrouter(request_text, None)
@@ -337,7 +312,6 @@ def stream_smart_agent():
                 yield f"data: {json.dumps({'result': f'🖼️ Image saved to {save_path}', 'path': save_path, 'tool': 'image_generation'})}\n\n"
             yield f"data: {json.dumps({'done': True})}\n\n"
             return
-        # Normal chat for non-image requests
         memories = recall_memory(request_text, n_results=3)
         memory_context = "\n".join(memories) if memories else ""
         prompt = f"Memory:\n{memory_context}\n\nUser: {request_text}\nAssistant:"
