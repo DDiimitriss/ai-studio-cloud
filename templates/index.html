@@ -274,7 +274,21 @@ body{
   background:var(--bg2);
   border-top:1px solid var(--border);
 }
-#input-area > *{max-width:900px;margin:0 auto}
+#input-wrap{
+  position:relative;
+  display:flex;
+  align-items:flex-end;
+  gap:10px;
+  max-width:1100px;
+  margin:0 auto;
+  width:100%;
+}
+.input-hint{
+  font-size:11px;color:var(--muted);
+  margin-top:8px;font-family:var(--font-mono);
+  text-align:center;
+  max-width:1100px;margin-left:auto;margin-right:auto;
+}
 #autocomplete-list{
   position:absolute;bottom:100%;left:0;right:0;
   background:var(--bg2);border:1px solid var(--border2);
@@ -287,7 +301,6 @@ body{
   transition:background .1s;
 }
 #autocomplete-list div:hover{background:var(--bg3);color:var(--accent)}
-#input-wrap{position:relative;display:flex;align-items:flex-end;gap:10px}
 #user-input{
   flex:1;resize:none;
   background:var(--bg3);
@@ -336,7 +349,7 @@ body{
 #voice-btn.recording{color:var(--red);border-color:var(--red);background:var(--red)11;animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
-.input-hint{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--font-mono);text-align:center}
+.input-hint-old{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--font-mono);text-align:center;display:none}
 
 /* ── Tool panels (right side) ──────────────────────────────────── */
 #tool-panel{
