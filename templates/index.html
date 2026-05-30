@@ -283,11 +283,18 @@ body{
   margin:0 auto;
   width:100%;
 }
+/* The text field wrapper must GROW to fill available space */
+.input-field-wrap{
+  position:relative;
+  flex:1 1 auto;
+  min-width:0;
+}
 .input-hint{
   font-size:11px;color:var(--muted);
   margin-top:8px;font-family:var(--font-mono);
   text-align:center;
-  max-width:1100px;margin-left:auto;margin-right:auto;
+  max-width:1100px;
+  margin-left:auto;margin-right:auto;
 }
 #autocomplete-list{
   position:absolute;bottom:100%;left:0;right:0;
@@ -302,7 +309,10 @@ body{
 }
 #autocomplete-list div:hover{background:var(--bg3);color:var(--accent)}
 #user-input{
-  flex:1;resize:none;
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  resize:none;
   background:var(--bg3);
   border:1px solid var(--border2);
   border-radius:12px;
@@ -317,7 +327,6 @@ body{
 }
 #user-input:focus{border-color:var(--accent)}
 #user-input::placeholder{color:var(--muted)}
-.send-row{display:flex;gap:8px;align-items:center}
 #send-btn{
   background:linear-gradient(135deg,var(--accent),var(--accent2));
   border:none;color:#fff;
@@ -337,19 +346,16 @@ body{
 }
 #stop-btn:hover{background:var(--red)33}
 #stop-btn.visible{display:flex}
-
 #voice-btn{
   background:none;border:1px solid var(--border2);
-  color:var(--muted);width:44px;height:44px;border-radius:10px;
+  color:var(--muted);width:52px;height:52px;border-radius:12px;
   font-size:17px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
-  transition:all .15s;
+  transition:all .15s;flex-shrink:0;
 }
 #voice-btn:hover{color:var(--text);border-color:var(--border2)}
 #voice-btn.recording{color:var(--red);border-color:var(--red);background:var(--red)11;animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-
-.input-hint-old{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--font-mono);text-align:center;display:none}
 
 /* ── Tool panels (right side) ──────────────────────────────────── */
 #tool-panel{
