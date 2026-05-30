@@ -82,9 +82,9 @@ DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
 # Only true image-generation models (not chat models) should be here.
 # ---------------------------------------------------------------------------
 IMAGE_MODELS = [
-    "x-ai/grok-imagine-image-quality:free",        # Grok free image gen (working May 2026)
-    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, current)
-    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, stable)
+    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, confirmed working)
+    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, newer)
+    "x-ai/grok-imagine-image-quality:free",        # Fallback
 ]
 
 # ---------------------------------------------------------------------------
@@ -1315,3 +1315,4 @@ if __name__ == "__main__":
     print(f"  Port        : {port}")
     print(f"{'='*62}\n")
     app.run(debug=False, host="0.0.0.0", port=port)
+
