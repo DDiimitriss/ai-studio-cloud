@@ -169,34 +169,40 @@ body{
 /* messages */
 #messages{
   flex:1;overflow-y:auto;
-  padding:20px 16px;
+  padding:24px 24px 24px;
   scroll-behavior:smooth;
 }
-#messages::-webkit-scrollbar{width:4px}
+/* Inner wrapper to center & limit width for readability */
+#messages > *{
+  max-width:900px;
+  margin-left:auto;margin-right:auto;
+}
+#messages::-webkit-scrollbar{width:6px}
 #messages::-webkit-scrollbar-track{background:transparent}
 #messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
 
 .msg{
-  display:flex;gap:12px;
-  margin-bottom:18px;
+  display:flex;gap:14px;
+  margin-bottom:22px;
   animation:fadeUp .25s ease;
 }
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .msg-avatar{
-  width:30px;height:30px;border-radius:8px;
+  width:36px;height:36px;border-radius:9px;
   display:flex;align-items:center;justify-content:center;
-  font-size:14px;flex-shrink:0;margin-top:2px;
+  font-size:16px;flex-shrink:0;margin-top:2px;
 }
 .msg.user .msg-avatar{background:linear-gradient(135deg,var(--accent),var(--accent2))}
 .msg.ai   .msg-avatar{background:var(--bg3);border:1px solid var(--border2)}
 .msg-body{flex:1;min-width:0}
-.msg-role{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:5px;text-transform:uppercase}
+.msg-role{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
 .msg-content{
   background:var(--ai-bg);
   border:1px solid var(--border);
   border-radius:var(--radius);
-  padding:12px 14px;
-  line-height:1.65;
+  padding:14px 18px;
+  line-height:1.7;
+  font-size:15px;
   word-break:break-word;
 }
 .msg.user .msg-content{background:var(--user-bg);border-color:var(--accent)20}
@@ -264,10 +270,11 @@ body{
 
 /* input area */
 #input-area{
-  padding:12px 16px;
+  padding:16px 24px 18px;
   background:var(--bg2);
   border-top:1px solid var(--border);
 }
+#input-area > *{max-width:900px;margin:0 auto}
 #autocomplete-list{
   position:absolute;bottom:100%;left:0;right:0;
   background:var(--bg2);border:1px solid var(--border2);
@@ -276,33 +283,33 @@ body{
   max-height:180px;overflow-y:auto;
 }
 #autocomplete-list div{
-  padding:8px 14px;font-size:13px;cursor:pointer;
+  padding:10px 14px;font-size:14px;cursor:pointer;
   transition:background .1s;
 }
 #autocomplete-list div:hover{background:var(--bg3);color:var(--accent)}
-#input-wrap{position:relative;display:flex;align-items:flex-end;gap:8px}
+#input-wrap{position:relative;display:flex;align-items:flex-end;gap:10px}
 #user-input{
   flex:1;resize:none;
   background:var(--bg3);
   border:1px solid var(--border2);
-  border-radius:10px;
+  border-radius:12px;
   color:var(--text);
   font-family:var(--font-ui);
-  font-size:14px;
-  padding:11px 14px;
-  min-height:44px;max-height:140px;
+  font-size:15px;
+  padding:14px 18px;
+  min-height:52px;max-height:200px;
   outline:none;
   transition:border-color .15s;
-  line-height:1.5;
+  line-height:1.55;
 }
 #user-input:focus{border-color:var(--accent)}
 #user-input::placeholder{color:var(--muted)}
-.send-row{display:flex;gap:6px;align-items:center}
+.send-row{display:flex;gap:8px;align-items:center}
 #send-btn{
   background:linear-gradient(135deg,var(--accent),var(--accent2));
   border:none;color:#fff;
-  width:42px;height:42px;border-radius:10px;
-  font-size:18px;cursor:pointer;
+  width:52px;height:52px;border-radius:12px;
+  font-size:20px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:opacity .15s,transform .1s;flex-shrink:0;
 }
@@ -310,8 +317,8 @@ body{
 #send-btn:active{transform:scale(.97)}
 #stop-btn{
   background:var(--red)22;border:1px solid var(--red)44;
-  color:var(--red);width:42px;height:42px;border-radius:10px;
-  font-size:16px;cursor:pointer;
+  color:var(--red);width:52px;height:52px;border-radius:12px;
+  font-size:18px;cursor:pointer;
   display:none;align-items:center;justify-content:center;
   transition:background .15s;flex-shrink:0;
 }
@@ -320,8 +327,8 @@ body{
 
 #voice-btn{
   background:none;border:1px solid var(--border2);
-  color:var(--muted);width:36px;height:36px;border-radius:8px;
-  font-size:15px;cursor:pointer;
+  color:var(--muted);width:44px;height:44px;border-radius:10px;
+  font-size:17px;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   transition:all .15s;
 }
@@ -329,7 +336,7 @@ body{
 #voice-btn.recording{color:var(--red);border-color:var(--red);background:var(--red)11;animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 
-.input-hint{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--font-mono)}
+.input-hint{font-size:11px;color:var(--muted);margin-top:8px;font-family:var(--font-mono);text-align:center}
 
 /* ── Tool panels (right side) ──────────────────────────────────── */
 #tool-panel{
