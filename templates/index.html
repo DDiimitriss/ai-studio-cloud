@@ -671,15 +671,13 @@ body{
         <!-- Input -->
         <div id="input-area">
           <div id="input-wrap">
-            <div style="flex:1;position:relative">
+            <div class="input-field-wrap">
               <div id="autocomplete-list" style="display:none"></div>
               <textarea id="user-input" placeholder="Message AI Studio… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
             </div>
-            <div class="send-row">
-              <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
-              <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
-              <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
-            </div>
+            <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
+            <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
+            <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
           </div>
           <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 🎤 voice input</div>
         </div>
