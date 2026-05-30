@@ -82,9 +82,9 @@ DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
 # Only true image-generation models (not chat models) should be here.
 # ---------------------------------------------------------------------------
 IMAGE_MODELS = [
-    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, confirmed working)
-    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, newer)
-    "x-ai/grok-imagine-image-quality:free",        # Fallback
+    "x-ai/grok-imagine-image-quality:free",        # Grok free image gen (working May 2026)
+    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, current)
+    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, stable)
 ]
 
 # ---------------------------------------------------------------------------
@@ -334,6 +334,22 @@ def generate_image_with_openrouter(prompt: str, image_base64: str = None):
                 continue
 
             message = resp.json()["choices"][0]["message"]
+
+            # ★ FIX: OpenRouter returns images in message["images"], NOT message["content"]
+            images = message.get("images", [])
+            if images and isinstance(images, list):
+                for img in images:
+                    if not isinstance(img, dict):
+                        continue
+                    url_data = img.get("image_url", {}).get("url", "")
+                    if url_data.startswith("data:image"):
+                        hdr, b64 = url_data.split(",", 1)
+                        ext = hdr.split("/")[1].split(";")[0]
+                        return _save_b64_image(b64, ext), None
+                    elif url_data.startswith("http"):
+                        return _download_image(url_data), None
+
+            # Fallback: check content field (older response format)
             content = message.get("content", "")
 
             # Gemini returns a list of content parts (multimodal response)
@@ -1315,4 +1331,3 @@ if __name__ == "__main__":
     print(f"  Port        : {port}")
     print(f"{'='*62}\n")
     app.run(debug=False, host="0.0.0.0", port=port)
-
