@@ -1,31 +1,1676 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>AI Studio Cloud</title>
-    <style>
-        body { font-family: Arial; max-width: 600px; margin: auto; padding: 20px; background: #0f172a; color: white; }
-        textarea, button { width: 100%; padding: 10px; margin: 5px 0; }
-        #response { background: #1e293b; padding: 10px; border-radius: 8px; white-space: pre-wrap; }
-    </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+/* ── Design tokens ─────────────────────────────────────────────── */
+:root {
+  --bg:        #0a0c10;
+  --bg2:       #111318;
+  --bg3:       #181c24;
+  --border:    #1e2330;
+  --border2:   #2a3045;
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --accent:    #3b82f6;
+  --accent2:   #6366f1;
+  --green:     #10b981;
+  --amber:     #f59e0b;
+  --red:       #ef4444;
+  --user-bg:   #1a2035;
+  --ai-bg:     #111318;
+  --font-mono: 'Space Mono', monospace;
+  --font-ui:   'Syne', sans-serif;
+  --radius:    12px;
+  --shadow:    0 4px 24px rgba(0,0,0,.4);
+}
+.light {
+  --bg:        #f8fafc;
+  --bg2:       #ffffff;
+  --bg3:       #f1f5f9;
+  --border:    #e2e8f0;
+  --border2:   #cbd5e1;
+  --text:      #0f172a;
+  --muted:     #94a3b8;
+  --user-bg:   #dbeafe;
+  --ai-bg:     #ffffff;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-ui);
+  font-size:14px;
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+#app{display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+#sidebar{
+  width:260px;
+  min-width:260px;
+  background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  transition:width .3s;
+  overflow:hidden;
+}
+#sidebar.collapsed{width:0;min-width:0}
+.sidebar-logo{
+  padding:20px 18px 16px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.logo-icon{
+  width:32px;height:32px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;flex-shrink:0;
+}
+.logo-text{font-size:16px;font-weight:800;letter-spacing:-.5px}
+.logo-ver{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
+
+.sidebar-section{padding:12px 10px 4px;font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+
+.sidebar-btn{
+  display:flex;align-items:center;gap:10px;
+  width:100%;padding:9px 14px;
+  background:none;border:none;color:var(--text);
+  font-family:var(--font-ui);font-size:13px;font-weight:600;
+  cursor:pointer;border-radius:8px;
+  margin:1px 4px;width:calc(100% - 8px);
+  transition:background .15s,color .15s;
+  text-align:left;
+}
+.sidebar-btn:hover{background:var(--bg3);color:var(--accent)}
+.sidebar-btn.active{background:var(--bg3);color:var(--accent)}
+.sidebar-btn .icon{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.sidebar-btn .badge{
+  margin-left:auto;font-size:10px;font-family:var(--font-mono);
+  background:var(--accent);color:#fff;
+  padding:1px 6px;border-radius:99px;
+}
+
+/* stats bar */
+#stats-bar{
+  margin-top:auto;
+  padding:10px 14px;
+  border-top:1px solid var(--border);
+  font-family:var(--font-mono);
+  font-size:10px;color:var(--muted);
+}
+.stat-row{display:flex;justify-content:space-between;margin-bottom:5px;align-items:center}
+.stat-label{color:var(--muted)}
+.stat-val{color:var(--text);font-weight:700}
+.bar-track{width:80px;height:4px;background:var(--border);border-radius:99px;overflow:hidden}
+.bar-fill{height:100%;border-radius:99px;background:var(--accent);transition:width .5s}
+.bar-fill.warn{background:var(--amber)}
+.bar-fill.danger{background:var(--red)}
+
+/* ── Main area ─────────────────────────────────────────────────── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* topbar */
+#topbar{
+  height:52px;min-height:52px;
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;
+  padding:0 16px;gap:10px;
+}
+#toggle-sidebar{
+  background:none;border:none;color:var(--muted);
+  font-size:18px;cursor:pointer;padding:4px;
+  border-radius:6px;transition:color .15s;
+}
+#toggle-sidebar:hover{color:var(--text)}
+
+#topbar-title{font-weight:800;font-size:15px;letter-spacing:-.3px;flex:1}
+#model-badge{
+  font-family:var(--font-mono);font-size:10px;
+  background:var(--bg3);border:1px solid var(--border2);
+  padding:3px 8px;border-radius:6px;color:var(--muted);
+  max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#model-select{
+  font-family:var(--font-mono);font-size:11px;
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);padding:4px 8px;border-radius:6px;cursor:pointer;
+  max-width:220px;
+}
+.topbar-btn{
+  background:none;border:1px solid var(--border2);
+  color:var(--muted);padding:5px 10px;border-radius:7px;
+  font-family:var(--font-ui);font-size:12px;font-weight:600;
+  cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px;
+}
+.topbar-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--accent)}
+
+/* panels container */
+#panels{flex:1;display:flex;overflow:hidden}
+
+/* chat panel */
+#chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* messages */
+#messages{
+  flex:1;overflow-y:auto;
+  padding:20px 16px;
+  scroll-behavior:smooth;
+}
+#messages::-webkit-scrollbar{width:4px}
+#messages::-webkit-scrollbar-track{background:transparent}
+#messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+.msg{
+  display:flex;gap:12px;
+  margin-bottom:18px;
+  animation:fadeUp .25s ease;
+}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.msg-avatar{
+  width:30px;height:30px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;flex-shrink:0;margin-top:2px;
+}
+.msg.user .msg-avatar{background:linear-gradient(135deg,var(--accent),var(--accent2))}
+.msg.ai   .msg-avatar{background:var(--bg3);border:1px solid var(--border2)}
+.msg-body{flex:1;min-width:0}
+.msg-role{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:5px;text-transform:uppercase}
+.msg-content{
+  background:var(--ai-bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:12px 14px;
+  line-height:1.65;
+  word-break:break-word;
+}
+.msg.user .msg-content{background:var(--user-bg);border-color:var(--accent)20}
+.msg-content pre{
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:12px;overflow-x:auto;
+  font-family:var(--font-mono);font-size:12px;margin:8px 0;
+}
+.msg-content code{font-family:var(--font-mono);font-size:12px;background:var(--bg);padding:1px 5px;border-radius:4px}
+.msg-content pre code{background:none;padding:0}
+.msg-content img{max-width:100%;border-radius:8px;margin-top:8px}
+
+/* ── Generated image action buttons ──────────────────────────── */
+.generated-image-wrap{margin-top:8px}
+.img-action-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);padding:6px 12px;border-radius:7px;
+  font-family:var(--font-ui);font-size:12px;font-weight:600;
+  text-decoration:none;cursor:pointer;
+  transition:all .15s;
+}
+.img-action-btn:hover{
+  background:var(--accent);border-color:var(--accent);
+  color:#fff;text-decoration:none;
+}
+.msg-content a{color:var(--accent);text-decoration:none}
+.msg-content a:hover{text-decoration:underline}
+
+.msg-actions{
+  display:flex;gap:6px;margin-top:6px;
+  opacity:0;transition:opacity .15s;
+}
+.msg:hover .msg-actions{opacity:1}
+.msg-action-btn{
+  background:none;border:1px solid var(--border);
+  color:var(--muted);padding:3px 8px;border-radius:5px;
+  font-size:11px;cursor:pointer;font-family:var(--font-ui);
+  transition:all .15s;
+}
+.msg-action-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+
+/* typing indicator */
+.typing-dots{display:flex;gap:4px;align-items:center;padding:8px 0}
+.typing-dots span{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--muted);
+  animation:bounce .9s infinite;
+}
+.typing-dots span:nth-child(2){animation-delay:.15s}
+.typing-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* step progress */
+.step-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--bg3);border:1px solid var(--border2);
+  padding:4px 10px;border-radius:99px;
+  font-size:11px;font-family:var(--font-mono);
+  margin:3px 0;color:var(--muted);
+}
+.step-chip.running{border-color:var(--accent);color:var(--accent)}
+.step-chip.done{border-color:var(--green);color:var(--green)}
+.step-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* input area */
+#input-area{
+  padding:12px 16px;
+  background:var(--bg2);
+  border-top:1px solid var(--border);
+}
+#autocomplete-list{
+  position:absolute;bottom:100%;left:0;right:0;
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:8px;overflow:hidden;
+  box-shadow:var(--shadow);z-index:50;
+  max-height:180px;overflow-y:auto;
+}
+#autocomplete-list div{
+  padding:8px 14px;font-size:13px;cursor:pointer;
+  transition:background .1s;
+}
+#autocomplete-list div:hover{background:var(--bg3);color:var(--accent)}
+#input-wrap{position:relative;display:flex;align-items:flex-end;gap:8px}
+#user-input{
+  flex:1;resize:none;
+  background:var(--bg3);
+  border:1px solid var(--border2);
+  border-radius:10px;
+  color:var(--text);
+  font-family:var(--font-ui);
+  font-size:14px;
+  padding:11px 14px;
+  min-height:44px;max-height:140px;
+  outline:none;
+  transition:border-color .15s;
+  line-height:1.5;
+}
+#user-input:focus{border-color:var(--accent)}
+#user-input::placeholder{color:var(--muted)}
+.send-row{display:flex;gap:6px;align-items:center}
+#send-btn{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;color:#fff;
+  width:42px;height:42px;border-radius:10px;
+  font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity .15s,transform .1s;flex-shrink:0;
+}
+#send-btn:hover{opacity:.9;transform:scale(1.05)}
+#send-btn:active{transform:scale(.97)}
+#stop-btn{
+  background:var(--red)22;border:1px solid var(--red)44;
+  color:var(--red);width:42px;height:42px;border-radius:10px;
+  font-size:16px;cursor:pointer;
+  display:none;align-items:center;justify-content:center;
+  transition:background .15s;flex-shrink:0;
+}
+#stop-btn:hover{background:var(--red)33}
+#stop-btn.visible{display:flex}
+
+#voice-btn{
+  background:none;border:1px solid var(--border2);
+  color:var(--muted);width:36px;height:36px;border-radius:8px;
+  font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}
+#voice-btn:hover{color:var(--text);border-color:var(--border2)}
+#voice-btn.recording{color:var(--red);border-color:var(--red);background:var(--red)11;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+.input-hint{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--font-mono)}
+
+/* ── Tool panels (right side) ──────────────────────────────────── */
+#tool-panel{
+  width:0;overflow:hidden;
+  border-left:1px solid var(--border);
+  background:var(--bg2);
+  transition:width .3s;
+  display:flex;flex-direction:column;
+}
+#tool-panel.open{width:460px;min-width:460px}
+#tool-panel-header{
+  padding:14px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+#tool-panel-title{font-weight:800;font-size:15px;flex:1}
+#close-panel{
+  background:none;border:none;color:var(--muted);
+  font-size:18px;cursor:pointer;padding:2px 6px;border-radius:5px;
+}
+#close-panel:hover{color:var(--text)}
+#tool-panel-body{flex:1;overflow-y:auto;padding:16px}
+#tool-panel-body::-webkit-scrollbar{width:4px}
+#tool-panel-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
+
+/* forms inside tool panels */
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
+.form-input,.form-textarea,.form-select{
+  width:100%;background:var(--bg3);
+  border:1px solid var(--border2);border-radius:8px;
+  color:var(--text);font-family:var(--font-ui);font-size:13px;
+  padding:9px 12px;outline:none;
+  transition:border-color .15s;
+}
+.form-input:focus,.form-textarea:focus,.form-select:focus{border-color:var(--accent)}
+.form-textarea{resize:vertical;min-height:80px;line-height:1.5}
+.form-select{cursor:pointer}
+.form-select option{background:var(--bg2)}
+
+.run-btn{
+  width:100%;padding:11px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;border-radius:9px;
+  color:#fff;font-family:var(--font-ui);font-size:14px;font-weight:700;
+  cursor:pointer;transition:opacity .15s;
+}
+.run-btn:hover{opacity:.9}
+.run-btn:disabled{opacity:.4;cursor:not-allowed}
+
+.result-box{
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:12px;
+  font-family:var(--font-mono);font-size:11px;
+  color:var(--muted);line-height:1.6;
+  max-height:300px;overflow-y:auto;
+  margin-top:12px;white-space:pre-wrap;word-break:break-all;
+}
+.result-box.success{border-color:var(--green)44;color:var(--green)}
+.result-box.error{border-color:var(--red)44;color:var(--red)}
+
+/* iframe preview */
+#preview-frame{
+  width:100%;flex:1;border:none;
+  background:#fff;border-radius:8px;
+  display:none;
+}
+#preview-frame.visible{display:block}
+.preview-toolbar{
+  display:flex;gap:6px;margin-bottom:8px;
+}
+.preview-toolbar button{
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--muted);padding:4px 10px;border-radius:6px;
+  font-size:11px;cursor:pointer;
+  transition:all .15s;
+}
+.preview-toolbar button:hover{color:var(--text);border-color:var(--border2)}
+
+/* memory list */
+.memory-item{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;margin-bottom:8px;
+  font-size:12px;line-height:1.5;
+}
+.memory-item-meta{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-bottom:4px}
+.memory-item-text{color:var(--text)}
+.memory-del{float:right;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}
+.memory-del:hover{color:var(--red)}
+
+/* plugin list */
+.plugin-card{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:9px;padding:12px;margin-bottom:8px;
+  display:flex;align-items:center;gap:10px;
+}
+.plugin-name{font-weight:700;font-size:13px}
+.plugin-desc{font-size:11px;color:var(--muted);margin-top:2px}
+.plugin-run{
+  margin-left:auto;background:none;
+  border:1px solid var(--border2);color:var(--accent);
+  padding:5px 12px;border-radius:6px;font-size:12px;
+  cursor:pointer;white-space:nowrap;font-family:var(--font-ui);font-weight:600;
+}
+.plugin-run:hover{background:var(--accent)11}
+
+/* health badge */
+.health-row{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;background:var(--bg3);
+  border:1px solid var(--border);border-radius:8px;
+  margin-bottom:8px;font-size:12px;font-family:var(--font-mono);
+}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.dot.green{background:var(--green)}
+.dot.red{background:var(--red)}
+.dot.amber{background:var(--amber)}
+
+/* modal */
+#modal-overlay{
+  display:none;position:fixed;inset:0;
+  background:#000a;z-index:100;
+  align-items:center;justify-content:center;
+}
+#modal-overlay.open{display:flex}
+#modal{
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:16px;padding:28px;max-width:400px;width:90%;
+  box-shadow:0 24px 60px #0008;
+  animation:popIn .2s ease;
+}
+@keyframes popIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:none}}
+#modal h3{font-size:16px;font-weight:800;margin-bottom:8px}
+#modal p{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:20px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.modal-btn{
+  padding:8px 18px;border-radius:8px;font-size:13px;font-weight:700;
+  cursor:pointer;border:1px solid var(--border2);
+  background:var(--bg3);color:var(--text);
+  font-family:var(--font-ui);transition:all .15s;
+}
+.modal-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.modal-btn.danger{background:var(--red);border-color:var(--red);color:#fff}
+.modal-btn:hover{opacity:.85}
+
+/* toast */
+#toast-container{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:10px;padding:10px 16px;
+  font-size:13px;box-shadow:var(--shadow);
+  animation:slideIn .25s ease;pointer-events:auto;
+  display:flex;align-items:center;gap:8px;
+  min-width:220px;
+}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+.toast.success{border-color:var(--green)55}
+.toast.error{border-color:var(--red)55}
+
+/* drag-drop overlay */
+#drop-overlay{
+  display:none;position:fixed;inset:0;
+  background:#0a0c10cc;z-index:90;
+  align-items:center;justify-content:center;
+  flex-direction:column;gap:12px;
+  border:3px dashed var(--accent);
+  font-size:18px;font-weight:700;color:var(--accent);
+}
+#drop-overlay.active{display:flex}
+
+/* scrollbar hidden utility */
+.hide-scroll::-webkit-scrollbar{display:none}
+
+/* export menu */
+#export-menu{
+  position:absolute;right:0;top:calc(100% + 6px);
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:10px;padding:6px;z-index:40;
+  box-shadow:var(--shadow);display:none;min-width:160px;
+}
+#export-menu.open{display:block}
+.export-item{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 12px;border-radius:7px;font-size:13px;
+  cursor:pointer;transition:background .1s;
+}
+.export-item:hover{background:var(--bg3)}
+
+/* responsive */
+@media(max-width:700px){
+  #sidebar{display:none}
+  #tool-panel.open{width:100vw;position:fixed;inset:0;z-index:60}
+}
+</style>
 </head>
 <body>
-    <h1>🤖 AI Studio Cloud</h1>
-    <textarea id="message" rows="3" placeholder="Type your message..."></textarea>
-    <button onclick="send()">Send</button>
-    <div id="response"></div>
-    <script>
-        async function send() {
-            const msg = document.getElementById('message').value;
-            const responseDiv = document.getElementById('response');
-            responseDiv.innerText = "Thinking...";
-            const res = await fetch('/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg })
-            });
-            const data = await res.json();
-            responseDiv.innerText = data.reply || data.error;
+
+<!-- Drop overlay -->
+<div id="drop-overlay">📎 Drop file to attach</div>
+
+<!-- Toast -->
+<div id="toast-container"></div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h3 id="modal-title">Confirm</h3>
+    <p id="modal-msg">Are you sure?</p>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<div id="app">
+  <!-- ─── Sidebar ──────────────────────────────────────────────── -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🤖</div>
+      <div>
+        <div class="logo-text">AI Studio</div>
+        <div class="logo-ver">v2.0 · Cloud</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">Tools</div>
+    <button class="sidebar-btn active" onclick="openTool('chat')" id="btn-chat">
+      <span class="icon">💬</span> Chat
+    </button>
+    <button class="sidebar-btn" onclick="openTool('website')" id="btn-website">
+      <span class="icon">🌐</span> Website Generator
+    </button>
+    <button class="sidebar-btn" onclick="openTool('code')" id="btn-code">
+      <span class="icon">💻</span> Code Tools
+    </button>
+    <button class="sidebar-btn" onclick="openTool('search')" id="btn-search">
+      <span class="icon">🔍</span> Web Search
+    </button>
+    <button class="sidebar-btn" onclick="openTool('appgen')" id="btn-appgen">
+      <span class="icon">⚙️</span> App Generator
+    </button>
+    <button class="sidebar-btn" onclick="openTool('clone')" id="btn-clone">
+      <span class="icon">📋</span> Clone Website
+    </button>
+    <button class="sidebar-btn" onclick="openTool('image')" id="btn-image">
+      <span class="icon">🎨</span> Image Generation
+    </button>
+
+    <div class="sidebar-section">System</div>
+    <button class="sidebar-btn" onclick="openTool('memory')" id="btn-memory">
+      <span class="icon">🧠</span> Memory
+    </button>
+    <button class="sidebar-btn" onclick="openTool('plugins')" id="btn-plugins">
+      <span class="icon">🔌</span> Plugins
+    </button>
+    <button class="sidebar-btn" onclick="openTool('health')" id="btn-health">
+      <span class="icon">❤️</span> Health Check
+    </button>
+
+    <div class="sidebar-section">Preferences</div>
+    <button class="sidebar-btn" onclick="toggleTheme()">
+      <span class="icon" id="theme-icon">☀️</span> Toggle Theme
+    </button>
+    <button class="sidebar-btn" onclick="clearChatUI()">
+      <span class="icon">🗑️</span> Clear Chat
+    </button>
+
+    <!-- System stats -->
+    <div id="stats-bar">
+      <div class="stat-row">
+        <span class="stat-label">CPU</span>
+        <span class="stat-val" id="stat-cpu">–</span>
+        <div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%"></div></div>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">RAM</span>
+        <span class="stat-val" id="stat-ram">–</span>
+        <div class="bar-track"><div class="bar-fill" id="bar-ram" style="width:0%"></div></div>
+      </div>
+      <div class="stat-row" id="gpu-row" style="display:none">
+        <span class="stat-label">GPU</span>
+        <span class="stat-val" id="stat-gpu">–</span>
+        <div class="bar-track"><div class="bar-fill" id="bar-gpu" style="width:0%"></div></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── Main ─────────────────────────────────────────────────── -->
+  <div id="main">
+    <!-- Topbar -->
+    <div id="topbar">
+      <button id="toggle-sidebar" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+      <div id="topbar-title">Chat</div>
+      <select id="model-select" title="Select model"></select>
+      <div style="position:relative">
+        <button class="topbar-btn" onclick="toggleExportMenu()">⬇ Export</button>
+        <div id="export-menu">
+          <div class="export-item" onclick="exportChat('json')">📄 Export JSON</div>
+          <div class="export-item" onclick="exportChat('md')">📝 Export Markdown</div>
+        </div>
+      </div>
+      <button class="topbar-btn" onclick="openTool('health')">❤️ Health</button>
+    </div>
+
+    <div id="panels">
+      <!-- Chat panel -->
+      <div id="chat-panel">
+        <div id="messages">
+          <div class="msg ai">
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-body">
+              <div class="msg-role">AI Studio</div>
+              <div class="msg-content">
+                👋 Welcome to <strong>AI Studio</strong>! I'm powered by a smart fallback chain of free models.<br><br>
+                You can chat with me, generate websites, create images, search the web, clone sites, run plugins, and much more.<br><br>
+                Try: <em>"Draw a futuristic city at night"</em> or <em>"Generate a landing page for a coffee shop"</em>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div id="input-area">
+          <div id="input-wrap">
+            <div style="flex:1;position:relative">
+              <div id="autocomplete-list" style="display:none"></div>
+              <textarea id="user-input" placeholder="Message AI Studio… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
+            </div>
+            <div class="send-row">
+              <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
+              <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
+              <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
+            </div>
+          </div>
+          <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 🎤 voice input</div>
+        </div>
+      </div>
+
+      <!-- Tool panel -->
+      <div id="tool-panel">
+        <div id="tool-panel-header">
+          <div id="tool-panel-title">Tool</div>
+          <button id="close-panel" onclick="closeTool()">✕</button>
+        </div>
+        <div id="tool-panel-body"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================================================================
+// State
+// ================================================================
+let chatHistory   = [];
+let currentStream = null;
+let isGenerating  = false;
+let isRecording   = false;
+let mediaRecorder = null;
+let recognition   = null;
+let currentTool   = 'chat';
+let lastHtml      = '';
+let lastCode      = '';
+let statsInterval = null;
+
+// ================================================================
+// Init
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  loadModels();
+  startStats();
+  setupDragDrop();
+  setupAutoResize();
+  setupAutocomplete();
+  setupKeyboard();
+});
+
+// ================================================================
+// Models
+// ================================================================
+async function loadModels() {
+  try {
+    const r    = await fetch('/models');
+    const data = await r.json();
+    const sel  = document.getElementById('model-select');
+    sel.innerHTML = '';
+    (data.models || []).forEach(m => {
+      if (m.includes('image')) return; // hide image models from text selector
+      const o = document.createElement('option');
+      o.value = m; o.textContent = m.split('/').pop();
+      sel.appendChild(o);
+    });
+  } catch(e) { console.warn('Could not load models', e); }
+}
+
+function getModel() {
+  return document.getElementById('model-select').value || 'meta-llama/llama-4-scout:free';
+}
+
+// ================================================================
+// Chat
+// ================================================================
+function setupKeyboard() {
+  const inp = document.getElementById('user-input');
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+}
+
+function setupAutoResize() {
+  const ta = document.getElementById('user-input');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+  });
+}
+
+async function sendMessage() {
+  const inp = document.getElementById('user-input');
+  const msg = inp.value.trim();
+  if (!msg || isGenerating) return;
+
+  inp.value = '';
+  inp.style.height = 'auto';
+  hideAutocomplete();
+
+  addMsg('user', msg);
+  chatHistory.push({ role: 'user', content: msg });
+
+  const model = getModel();
+  isGenerating = true;
+  document.getElementById('stop-btn').classList.add('visible');
+  document.getElementById('send-btn').style.opacity = '.4';
+
+  const typingId = addTyping();
+
+  // Smart agent via SSE
+  try {
+    const url = `/stream_smart_agent?request=${encodeURIComponent(msg)}&model=${encodeURIComponent(model)}`;
+    const es   = new EventSource(url);
+    currentStream = es;
+
+    let aiText    = '';
+    let steps     = [];
+    let stepsDiv  = null;
+
+    es.onmessage = e => {
+      const d = JSON.parse(e.data);
+
+      if (d.error) {
+        removeTyping(typingId);
+        addMsg('ai', `❌ ${d.error}`);
+        doneGenerating(es);
+        return;
+      }
+
+      if (d.step_start) {
+        if (!stepsDiv) {
+          removeTyping(typingId);
+          stepsDiv = document.createElement('div');
+          stepsDiv.style.marginBottom = '12px';
+          const msgs = document.getElementById('messages');
+          msgs.appendChild(stepsDiv);
         }
-    </script>
+        const chip = document.createElement('div');
+        chip.className = 'step-chip running';
+        chip.id = `step-${d.step_index}`;
+        chip.innerHTML = `<div class="step-dot"></div>${d.step_start}`;
+        stepsDiv.appendChild(chip);
+        scrollBottom();
+        return;
+      }
+
+      if (d.token !== undefined) {
+        removeTyping(typingId);
+        aiText += d.token;
+        updateStreamMsg(typingId, aiText, stepsDiv);
+        return;
+      }
+
+      if (d.result !== undefined) {
+        removeTyping(typingId);
+        // Mark step done
+        if (steps.length > 0 && stepsDiv) {
+          const chip = stepsDiv.querySelector('.step-chip.running');
+          if (chip) { chip.classList.remove('running'); chip.classList.add('done'); }
+        }
+        aiText += (aiText ? '\n\n' : '') + d.result;
+
+        // Handle HTML preview
+        if (d.html_preview || d.new_html_preview) {
+          const html = d.html_preview || d.new_html_preview;
+          lastHtml = html;
+          aiText += '\n\n✅ Preview available — click **Preview** below';
+        }
+        if (d.refined_code) lastCode = d.refined_code;
+
+        updateStreamMsg(typingId, aiText, stepsDiv);
+
+        // Show clone preview
+        if (d.clone_preview) {
+          showClonePreview(d.directory);
+        }
+        return;
+      }
+
+      if (d.done) {
+        if (aiText) {
+          chatHistory.push({ role: 'assistant', content: aiText });
+        } else if (!stepsDiv) {
+          removeTyping(typingId);
+          addMsg('ai', '✅ Done.');
+        }
+        doneGenerating(es);
+      }
+    };
+
+    es.onerror = () => {
+      removeTyping(typingId);
+      if (isGenerating) addMsg('ai', '⚠️ Connection lost. Please try again.');
+      doneGenerating(es);
+    };
+
+  } catch(err) {
+    removeTyping(typingId);
+    addMsg('ai', `❌ Error: ${err.message}`);
+    doneGenerating(null);
+  }
+}
+
+let _streamMsgEl = null;
+function updateStreamMsg(id, text, stepsDiv) {
+  if (!_streamMsgEl) {
+    _streamMsgEl = createMsgEl('ai', '');
+    const msgs = document.getElementById('messages');
+    if (stepsDiv) msgs.insertBefore(_streamMsgEl, null);
+    else msgs.appendChild(_streamMsgEl);
+  }
+  const content = _streamMsgEl.querySelector('.msg-content');
+  content.innerHTML = renderMarkdown(text);
+  scrollBottom();
+}
+
+function doneGenerating(es) {
+  if (es) es.close();
+  currentStream    = null;
+  isGenerating     = false;
+  _streamMsgEl     = null;
+  document.getElementById('stop-btn').classList.remove('visible');
+  document.getElementById('send-btn').style.opacity = '1';
+}
+
+function stopGeneration() {
+  if (currentStream) { currentStream.close(); }
+  doneGenerating(null);
+  addMsg('ai', '⏹ Generation stopped.');
+}
+
+// ================================================================
+// Message rendering
+// ================================================================
+function addMsg(role, text) {
+  const el = createMsgEl(role, text);
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+  return el;
+}
+
+function createMsgEl(role, text) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `
+    <div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div>
+    <div class="msg-body">
+      <div class="msg-role">${role === 'user' ? 'You' : 'AI Studio'}</div>
+      <div class="msg-content">${renderMarkdown(text)}</div>
+      <div class="msg-actions">
+        <button class="msg-action-btn" onclick="copyMsg(this)">📋 Copy</button>
+        ${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}
+        ${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()">👁 Preview</button>' : ''}
+      </div>
+    </div>`;
+  return div;
+}
+
+function addTyping() {
+  const id  = 'typing-' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'msg ai';
+  div.id = id;
+  div.innerHTML = `
+    <div class="msg-avatar">🤖</div>
+    <div class="msg-body">
+      <div class="msg-role">AI Studio</div>
+      <div class="msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div>
+    </div>`;
+  document.getElementById('messages').appendChild(div);
+  scrollBottom();
+  return id;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function scrollBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+// ================================================================
+// Simple Markdown renderer
+// ================================================================
+function renderMarkdown(text) {
+  if (!text) return '';
+  let h = text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_,lang,code) =>
+      `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    // ── Images: handle both absolute (https://) and relative (/static/) URLs ──
+    // Each image gets a Download button below it
+    .replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\)]+)\)/g, (_, alt, url) => {
+      const filename = url.split('/').pop().split('?')[0] || 'image.png';
+      return `<div class="generated-image-wrap">
+        <img src="${url}" alt="${alt}" style="max-width:100%;border-radius:8px;margin-top:8px"/>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <a href="${url}" download="${filename}" class="img-action-btn">⬇ Download</a>
+          <a href="${url}" target="_blank" class="img-action-btn">🔍 Open Full Size</a>
+          <button onclick="copyImageUrl('${url}')" class="img-action-btn">📋 Copy Link</button>
+        </div>
+      </div>`;
+    })
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    .replace(/^#{3} (.+)$/gm, '<h3 style="margin:.5em 0 .25em;font-size:14px">$1</h3>')
+    .replace(/^#{2} (.+)$/gm, '<h2 style="margin:.5em 0 .25em;font-size:15px">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="margin:.5em 0 .25em;font-size:17px">$1</h1>')
+    .replace(/^- (.+)$/gm, '<li style="margin:.2em 0 .2em 1em">$1</li>')
+    .replace(/(<li[^>]*>.*<\/li>\n?)+/g, s => `<ul style="padding-left:.5em">${s}</ul>`)
+    .replace(/\n{2,}/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+  return h;
+}
+
+function copyImageUrl(url) {
+  // Convert relative URL to absolute for sharing
+  const fullUrl = url.startsWith('http') ? url : window.location.origin + url;
+  navigator.clipboard.writeText(fullUrl).then(() => toast('Image link copied!', 'success'));
+}
+
+// ================================================================
+// Copy / Speak
+// ================================================================
+function copyMsg(btn) {
+  const content = btn.closest('.msg-body').querySelector('.msg-content').innerText;
+  navigator.clipboard.writeText(content).then(() => toast('Copied!', 'success'));
+}
+
+function speakMsg(btn) {
+  const text = btn.closest('.msg-body').querySelector('.msg-content').innerText;
+  const utt  = new SpeechSynthesisUtterance(text);
+  utt.rate   = 1; utt.pitch = 1;
+  speechSynthesis.speak(utt);
+}
+
+// ================================================================
+// Preview
+// ================================================================
+function previewLastHtml() {
+  if (!lastHtml) return;
+  const panel = document.getElementById('tool-panel');
+  const body  = document.getElementById('tool-panel-body');
+  document.getElementById('tool-panel-title').textContent = '👁 HTML Preview';
+  body.innerHTML = `
+    <div class="preview-toolbar">
+      <button onclick="refreshPreview()">🔄 Refresh</button>
+      <button onclick="fullscreenPreview()">⛶ Fullscreen</button>
+      <button onclick="downloadHtml()">⬇ Download</button>
+    </div>
+    <iframe id="preview-frame" class="visible" style="width:100%;height:calc(100vh - 140px);border:1px solid var(--border);border-radius:8px"></iframe>`;
+  panel.classList.add('open');
+  writePreview();
+}
+
+function writePreview() {
+  const f = document.getElementById('preview-frame');
+  if (!f || !lastHtml) return;
+  f.srcdoc = lastHtml;
+}
+function refreshPreview() { writePreview(); }
+function fullscreenPreview() {
+  const f = document.getElementById('preview-frame');
+  if (f) f.requestFullscreen && f.requestFullscreen();
+}
+function downloadHtml() {
+  if (!lastHtml) return;
+  const a = document.createElement('a');
+  a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(lastHtml);
+  a.download = 'ai-studio-output.html';
+  a.click();
+}
+
+function showClonePreview(dir) {
+  const body = document.getElementById('tool-panel-body');
+  const url  = `/preview/${dir}/index.html`;
+  body.innerHTML += `
+    <div style="margin-top:12px">
+      <div class="preview-toolbar">
+        <button onclick="document.getElementById('clone-frame').src=document.getElementById('clone-frame').src">🔄</button>
+        <button onclick="document.getElementById('clone-frame').requestFullscreen()">⛶</button>
+        <a href="${url}" target="_blank"><button>🔗 Open</button></a>
+      </div>
+      <iframe id="clone-frame" src="${url}" style="width:100%;height:400px;border:1px solid var(--border);border-radius:8px"></iframe>
+    </div>`;
+}
+
+// ================================================================
+// Tool panels
+// ================================================================
+function openTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + tool);
+  if (btn) btn.classList.add('active');
+
+  if (tool === 'chat') { closeTool(); return; }
+
+  const panel = document.getElementById('tool-panel');
+  const body  = document.getElementById('tool-panel-body');
+  panel.classList.add('open');
+
+  const titles = {
+    website:'🌐 Website Generator', code:'💻 Code Tools',
+    search:'🔍 Web Search', appgen:'⚙️ App Generator',
+    clone:'📋 Clone Website', image:'🎨 Image Generation',
+    memory:'🧠 Memory', plugins:'🔌 Plugins', health:'❤️ Health Check'
+  };
+  document.getElementById('tool-panel-title').textContent = titles[tool] || tool;
+
+  switch(tool) {
+    case 'website': renderWebsiteTool(body); break;
+    case 'code':    renderCodeTool(body); break;
+    case 'search':  renderSearchTool(body); break;
+    case 'appgen':  renderAppGenTool(body); break;
+    case 'clone':   renderCloneTool(body); break;
+    case 'image':   renderImageTool(body); break;
+    case 'memory':  renderMemoryTool(body); break;
+    case 'plugins': renderPluginsTool(body); break;
+    case 'health':  renderHealthTool(body); break;
+  }
+}
+
+function closeTool() {
+  document.getElementById('tool-panel').classList.remove('open');
+  document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-chat').classList.add('active');
+  currentTool = 'chat';
+}
+
+// ── Website Generator ──────────────────────────────────────────
+function renderWebsiteTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Task / Description</label>
+      <textarea class="form-textarea" id="wt-task" placeholder="A landing page for a coffee shop with dark theme and animations..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Filename (optional)</label>
+      <input class="form-input" id="wt-filename" placeholder="coffee-shop"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Style Guide (optional)</label>
+      <input class="form-input" id="wt-style" placeholder="Dark theme, neon accents, modern fonts"/>
+    </div>
+    <button class="run-btn" id="wt-btn" onclick="runWebsite()">🚀 Generate Website</button>
+    <div id="wt-result"></div>`;
+}
+
+async function runWebsite() {
+  const task  = document.getElementById('wt-task').value.trim();
+  if (!task) { toast('Please enter a task', 'error'); return; }
+  setLoading('wt-btn', true);
+  const r = await fetch('/generate', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ task, filename: document.getElementById('wt-filename').value || 'website',
+      styleGuide: document.getElementById('wt-style').value, model: getModel() })
+  });
+  const d = await r.json();
+  setLoading('wt-btn', false);
+  if (d.error) { showResult('wt-result', '❌ ' + d.error, 'error'); return; }
+  lastHtml = d.html;
+  showResult('wt-result', `✅ Saved to ${d.path}\nTokens: ${d.token_info?.total_tokens || '?'}`, 'success');
+  document.getElementById('wt-result').innerHTML += `
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="run-btn" style="flex:1" onclick="previewLastHtml()">👁 Preview</button>
+      <button class="run-btn" style="flex:1;background:var(--bg3);color:var(--text)" onclick="downloadHtml()">⬇ Download</button>
+    </div>`;
+}
+
+// ── Code Tools ─────────────────────────────────────────────────
+function renderCodeTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Your Code</label>
+      <textarea class="form-textarea" id="ct-code" style="min-height:120px;font-family:var(--font-mono);font-size:12px" placeholder="Paste your code here..."></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="run-btn" style="flex:1" onclick="runCodeToHtml()">🌐 To HTML Page</button>
+      <button class="run-btn" style="flex:1;background:var(--bg3);color:var(--text)" onclick="openRefineCode()">✏️ Refine Code</button>
+    </div>
+    <div id="ct-refine" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Refine Instruction</label>
+        <input class="form-input" id="ct-instruction" placeholder="Add error handling, optimise for speed..."/>
+      </div>
+      <button class="run-btn" onclick="runRefineCode()">✨ Refine</button>
+    </div>
+    <div id="ct-result"></div>`;
+}
+function openRefineCode() {
+  const d = document.getElementById('ct-refine');
+  d.style.display = d.style.display === 'none' ? 'block' : 'none';
+}
+async function runCodeToHtml() {
+  const code = document.getElementById('ct-code').value.trim();
+  if (!code) { toast('Paste some code first', 'error'); return; }
+  const r = await fetch('/convert_code', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ code, model: getModel() })
+  });
+  const d = await r.json();
+  if (d.error) { showResult('ct-result', '❌ ' + d.error, 'error'); return; }
+  lastHtml = d.html;
+  showResult('ct-result', '✅ HTML generated!', 'success');
+  document.getElementById('ct-result').innerHTML += `<button class="run-btn" style="margin-top:8px" onclick="previewLastHtml()">👁 Preview</button>`;
+}
+async function runRefineCode() {
+  const code        = document.getElementById('ct-code').value.trim();
+  const instruction = document.getElementById('ct-instruction').value.trim();
+  if (!code || !instruction) { toast('Code and instruction required', 'error'); return; }
+  const r = await fetch('/refine_code', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ code, instruction, model: getModel() })
+  });
+  const d = await r.json();
+  if (d.error) { showResult('ct-result', '❌ ' + d.error, 'error'); return; }
+  lastCode = d.refined_code;
+  document.getElementById('ct-code').value = d.refined_code;
+  showResult('ct-result', '✅ Code refined!', 'success');
+}
+
+// ── Web Search ─────────────────────────────────────────────────
+function renderSearchTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Search Query</label>
+      <input class="form-input" id="st-query" placeholder="Latest AI news 2026..."/>
+    </div>
+    <button class="run-btn" id="st-btn" onclick="runSearch()">🔍 Search</button>
+    <div id="st-result"></div>`;
+  document.getElementById('st-query').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runSearch();
+  });
+}
+async function runSearch() {
+  const query = document.getElementById('st-query').value.trim();
+  if (!query) return;
+  setLoading('st-btn', true);
+  const r = await fetch('/search', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ query })
+  });
+  const d = await r.json();
+  setLoading('st-btn', false);
+  if (d.error) { showResult('st-result', '❌ ' + d.error, 'error'); return; }
+  showResult('st-result', d.results);
+}
+
+// ── App Generator ──────────────────────────────────────────────
+function renderAppGenTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea class="form-textarea" id="ag-desc" placeholder="A script that monitors CPU usage and sends email alerts..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Language</label>
+      <select class="form-select" id="ag-lang">
+        <option value="python">Python</option>
+        <option value="powershell">PowerShell</option>
+        <option value="bash">Bash</option>
+        <option value="batch">Batch (.bat)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Filename (optional)</label>
+      <input class="form-input" id="ag-filename" placeholder="monitor_cpu"/>
+    </div>
+    <button class="run-btn" id="ag-btn" onclick="runAppGen()">⚙️ Generate App</button>
+    <div id="ag-result"></div>`;
+}
+async function runAppGen() {
+  const desc = document.getElementById('ag-desc').value.trim();
+  if (!desc) { toast('Please describe the app', 'error'); return; }
+  setLoading('ag-btn', true);
+  const r = await fetch('/generate_app', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      description: desc,
+      language: document.getElementById('ag-lang').value,
+      filename: document.getElementById('ag-filename').value,
+      model: getModel()
+    })
+  });
+  const d = await r.json();
+  setLoading('ag-btn', false);
+  if (d.error) { showResult('ag-result', '❌ ' + d.error, 'error'); return; }
+  showResult('ag-result', `✅ Saved to ${d.path}`, 'success');
+  const box = document.createElement('pre');
+  box.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;overflow-x:auto;margin-top:8px;max-height:300px';
+  box.textContent = (d.code || '').slice(0, 2000);
+  document.getElementById('ag-result').appendChild(box);
+}
+
+// ── Clone Website ──────────────────────────────────────────────
+function renderCloneTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Website URL</label>
+      <input class="form-input" id="cl-url" placeholder="https://example.com"/>
+    </div>
+    <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--muted)">
+      ⚠️ Cloning downloads HTML, CSS, JS and images. May take 30–120 seconds for large sites.
+    </div>
+    <button class="run-btn" id="cl-btn" onclick="runClone()">📋 Clone Website</button>
+    <div id="cl-result"></div>`;
+}
+async function runClone() {
+  const url = document.getElementById('cl-url').value.trim();
+  if (!url) { toast('Enter a URL', 'error'); return; }
+  setLoading('cl-btn', true, '⏳ Cloning…');
+  const r = await fetch('/clone', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ url })
+  });
+  const d = await r.json();
+  setLoading('cl-btn', false, '📋 Clone Website');
+  if (d.error) { showResult('cl-result', '❌ ' + d.error, 'error'); return; }
+  showResult('cl-result', `✅ Cloned!\nSaved to: ${d.directory}`, 'success');
+  showClonePreview(d.directory);
+}
+
+// ── Image Generation ───────────────────────────────────────────
+function renderImageTool(body) {
+  body.innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Image Prompt</label>
+      <textarea class="form-textarea" id="ig-prompt" placeholder="A futuristic city skyline at night with neon lights reflecting on wet streets, cinematic..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reference Image (optional – base64 or URL)</label>
+      <input class="form-input" id="ig-img" placeholder="Paste base64 or leave blank"/>
+    </div>
+    <button class="run-btn" id="ig-btn" onclick="runImageGen()">🎨 Generate Image</button>
+    <div id="ig-result"></div>`;
+}
+async function runImageGen() {
+  const prompt = document.getElementById('ig-prompt').value.trim();
+  if (!prompt) { toast('Enter a prompt', 'error'); return; }
+  setLoading('ig-btn', true, '🎨 Generating…');
+  const r = await fetch('/gemini_image', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ prompt, image: document.getElementById('ig-img').value || null })
+  });
+  const d = await r.json();
+  setLoading('ig-btn', false, '🎨 Generate Image');
+  if (d.error) { showResult('ig-result', '❌ ' + d.error, 'error'); return; }
+  const res = document.getElementById('ig-result');
+  res.innerHTML = `<div class="result-box success">✅ Generated!</div>
+    <img src="/${d.path.replace(/\\/g,'/')}" style="width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--border)"/>
+    <a href="/${d.path.replace(/\\/g,'/')}" download>
+      <button class="run-btn" style="margin-top:8px">⬇ Download</button>
+    </a>`;
+}
+
+// ── Memory ─────────────────────────────────────────────────────
+async function renderMemoryTool(body) {
+  body.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <input class="form-input" id="mem-search" placeholder="Search memories…" style="flex:1"/>
+      <button class="run-btn" style="width:80px;padding:9px" onclick="loadMemories()">Search</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:16px">
+      <button class="run-btn" style="flex:1;background:var(--amber);color:#000" onclick="compressMemory()">🗜 Compress Old</button>
+    </div>
+    <div id="mem-list"><div style="color:var(--muted);font-size:13px">Loading…</div></div>`;
+  loadMemories();
+}
+async function loadMemories() {
+  const search = document.getElementById('mem-search')?.value || '';
+  const r = await fetch(`/list_memories?search=${encodeURIComponent(search)}&limit=30`);
+  const d = await r.json();
+  const list = document.getElementById('mem-list');
+  if (!list) return;
+  if (!d.memories?.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">No memories found.</div>'; return; }
+  list.innerHTML = d.memories.map(m => `
+    <div class="memory-item">
+      <div class="memory-item-meta">
+        ${m.metadata?.action || 'memory'} · ${m.metadata?.timestamp ? new Date(m.metadata.timestamp*1000).toLocaleDateString() : ''}
+        <button class="memory-del" onclick="deleteMem('${m.id}')">🗑</button>
+      </div>
+      <div class="memory-item-text">${(m.document||'').slice(0,200)}</div>
+    </div>`).join('');
+}
+async function deleteMem(id) {
+  await fetch('/delete_memory', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+  toast('Memory deleted', 'success');
+  loadMemories();
+}
+async function compressMemory() {
+  showModal('Compress Memory', 'Compress memories older than 30 days into a summary? This cannot be undone.', [
+    { label:'Cancel', cls:'modal-btn' },
+    { label:'Compress', cls:'modal-btn primary', action: async () => {
+      const r = await fetch('/compress_memory', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ days_old:30, max_memories:20 }) });
+      const d = await r.json();
+      if (d.error) { toast('Error: ' + d.error, 'error'); return; }
+      toast(`Compressed ${d.deleted_count} memories`, 'success');
+      loadMemories();
+    }}
+  ]);
+}
+
+// ── Plugins ────────────────────────────────────────────────────
+async function renderPluginsTool(body) {
+  body.innerHTML = '<div style="color:var(--muted);font-size:13px">Loading plugins…</div>';
+  const r = await fetch('/list_plugins');
+  const d = await r.json();
+  const plugins = d.plugins || {};
+  if (!Object.keys(plugins).length) {
+    body.innerHTML = '<div style="color:var(--muted);font-size:13px">No plugins installed.<br><br>Add .py files to the /plugins folder.</div>';
+    return;
+  }
+  body.innerHTML = Object.entries(plugins).map(([key, info]) => `
+    <div class="plugin-card">
+      <div>
+        <div class="plugin-name">🔌 ${info.name || key}</div>
+        <div class="plugin-desc">${info.description || ''}</div>
+      </div>
+      <button class="plugin-run" onclick="runPluginPrompt('${key}','${(info.name||key).replace(/'/g,"\\'")}')">Run</button>
+    </div>`).join('');
+}
+function runPluginPrompt(key, name) {
+  showModal(`Run Plugin: ${name}`, `Send a message to chat asking to use "${name}" plugin, or enter custom args below.`, [
+    { label:'Cancel', cls:'modal-btn' },
+    { label:'Run in Chat', cls:'modal-btn primary', action: () => {
+      document.getElementById('user-input').value = `Use the ${name} plugin`;
+      sendMessage();
+      closeTool();
+    }}
+  ]);
+}
+
+// ── Health Check ───────────────────────────────────────────────
+async function renderHealthTool(body) {
+  body.innerHTML = '<div style="color:var(--muted);font-size:13px">Checking…</div>';
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const keyOk = d.api_key_set;
+    body.innerHTML = `
+      <div class="health-row">
+        <div class="dot ${keyOk ? 'green' : 'red'}"></div>
+        <div>${keyOk ? '✅ API Key set' : '❌ API Key missing – set OPENROUTER_API_KEY'}</div>
+      </div>
+      <div class="health-row">
+        <div class="dot green"></div>
+        <div>Server running</div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="form-label" style="margin-bottom:8px">Text Model Chain</div>
+        ${(d.text_model_chain || [d.default_text_model]).map((m,i) => `
+          <div class="health-row">
+            <div class="dot ${i===0?'green':'amber'}"></div>
+            <div style="font-family:var(--font-mono);font-size:11px">${m}</div>
+          </div>`).join('')}
+      </div>
+      <div style="margin-top:14px">
+        <div class="form-label" style="margin-bottom:8px">Image Model Chain</div>
+        ${(d.image_model_chain || []).map((m,i) => `
+          <div class="health-row">
+            <div class="dot ${i===0?'green':'amber'}"></div>
+            <div style="font-family:var(--font-mono);font-size:11px">${m}</div>
+          </div>`).join('')}
+      </div>
+      <button class="run-btn" style="margin-top:16px" onclick="renderHealthTool(document.getElementById('tool-panel-body'))">🔄 Refresh</button>`;
+  } catch(e) {
+    body.innerHTML = `<div class="health-row"><div class="dot red"></div><div>❌ Cannot reach server: ${e.message}</div></div>`;
+  }
+}
+
+// ================================================================
+// Sidebar / theme / UI helpers
+// ================================================================
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+let darkMode = true;
+function toggleTheme() {
+  darkMode = !darkMode;
+  document.body.classList.toggle('light', !darkMode);
+  document.getElementById('theme-icon').textContent = darkMode ? '☀️' : '🌙';
+}
+
+function clearChatUI() {
+  showModal('Clear Chat', 'Clear the conversation history?', [
+    { label:'Cancel', cls:'modal-btn' },
+    { label:'Clear', cls:'modal-btn danger', action: async () => {
+      await fetch('/clear_chat', { method:'POST' });
+      document.getElementById('messages').innerHTML = '';
+      chatHistory = [];
+      toast('Chat cleared', 'success');
+    }}
+  ]);
+}
+
+// ================================================================
+// System stats
+// ================================================================
+function startStats() {
+  fetchStats();
+  statsInterval = setInterval(fetchStats, 4000);
+}
+
+async function fetchStats() {
+  try {
+    const r = await fetch('/system_stats');
+    const d = await r.json();
+    setBar('cpu', d.cpu_percent, `${d.cpu_percent}%`);
+    setBar('ram', d.ram_percent, `${d.ram_used_gb}/${d.ram_total_gb}GB`);
+    if (d.gpu && d.gpu.gpu_percent !== undefined) {
+      document.getElementById('gpu-row').style.display = 'flex';
+      setBar('gpu', d.gpu.gpu_percent, `${d.gpu.gpu_percent}%`);
+    }
+  } catch(e) {}
+}
+
+function setBar(id, pct, label) {
+  const bar = document.getElementById('bar-' + id);
+  const val = document.getElementById('stat-' + id);
+  if (bar) {
+    bar.style.width = pct + '%';
+    bar.className = 'bar-fill' + (pct > 85 ? ' danger' : pct > 65 ? ' warn' : '');
+  }
+  if (val) val.textContent = label;
+}
+
+// ================================================================
+// Autocomplete
+// ================================================================
+function setupAutocomplete() {
+  const inp  = document.getElementById('user-input');
+  const list = document.getElementById('autocomplete-list');
+  let timer;
+  inp.addEventListener('input', () => {
+    clearTimeout(timer);
+    const val = inp.value.trim();
+    if (val.length < 2) { hideAutocomplete(); return; }
+    timer = setTimeout(() => fetchSuggestions(val), 300);
+  });
+  document.addEventListener('click', e => {
+    if (!inp.contains(e.target) && !list.contains(e.target)) hideAutocomplete();
+  });
+}
+
+async function fetchSuggestions(prefix) {
+  try {
+    const r = await fetch(`/autocomplete?prefix=${encodeURIComponent(prefix)}`);
+    const d = await r.json();
+    showAutocomplete(d.suggestions || []);
+  } catch(e) {}
+}
+
+function showAutocomplete(suggestions) {
+  const list = document.getElementById('autocomplete-list');
+  if (!suggestions.length) { hideAutocomplete(); return; }
+  list.innerHTML = suggestions.map(s =>
+    `<div onclick="selectSuggestion('${s.replace(/'/g,"\\'")}')">${s}</div>`
+  ).join('');
+  list.style.display = 'block';
+}
+
+function selectSuggestion(s) {
+  document.getElementById('user-input').value = s;
+  hideAutocomplete();
+  document.getElementById('user-input').focus();
+}
+
+function hideAutocomplete() {
+  document.getElementById('autocomplete-list').style.display = 'none';
+}
+
+// ================================================================
+// Voice input
+// ================================================================
+function toggleVoice() {
+  if (isRecording) {
+    stopVoice();
+  } else {
+    startVoice();
+  }
+}
+
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('Voice not supported in this browser', 'error'); return; }
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.lang = 'en-US';
+  recognition.onresult = e => {
+    const text = e.results[0][0].transcript;
+    document.getElementById('user-input').value = text;
+  };
+  recognition.onend = () => stopVoice();
+  recognition.start();
+  isRecording = true;
+  document.getElementById('voice-btn').classList.add('recording');
+}
+
+function stopVoice() {
+  if (recognition) { try { recognition.stop(); } catch(e){} }
+  isRecording = false;
+  document.getElementById('voice-btn').classList.remove('recording');
+}
+
+// ================================================================
+// Drag & drop file
+// ================================================================
+function setupDragDrop() {
+  const overlay = document.getElementById('drop-overlay');
+  document.addEventListener('dragover', e => { e.preventDefault(); overlay.classList.add('active'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) overlay.classList.remove('active'); });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    overlay.classList.remove('active');
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = reader.result;
+      const inp = document.getElementById('user-input');
+      if (file.type.startsWith('image/')) {
+        document.getElementById('ig-prompt') && openTool('image');
+        toast(`Image "${file.name}" ready – open Image Generation panel`, 'success');
+      } else {
+        inp.value = `Here is the content of ${file.name}:\n\n${content.slice(0,3000)}`;
+        toast(`File "${file.name}" loaded into input`, 'success');
+      }
+    };
+    if (file.type.startsWith('image/')) reader.readAsDataURL(file);
+    else reader.readAsText(file);
+  });
+}
+
+// ================================================================
+// Export chat
+// ================================================================
+function toggleExportMenu() {
+  document.getElementById('export-menu').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#export-menu') && !e.target.closest('.topbar-btn')) {
+    document.getElementById('export-menu').classList.remove('open');
+  }
+});
+
+function exportChat(format) {
+  document.getElementById('export-menu').classList.remove('open');
+  let content, filename, mime;
+  if (format === 'json') {
+    content  = JSON.stringify(chatHistory, null, 2);
+    filename = 'ai-studio-chat.json';
+    mime     = 'application/json';
+  } else {
+    content  = chatHistory.map(m => `**${m.role === 'user' ? 'You' : 'AI Studio'}:**\n${m.content}`).join('\n\n---\n\n');
+    filename = 'ai-studio-chat.md';
+    mime     = 'text/markdown';
+  }
+  const a = document.createElement('a');
+  a.href = `data:${mime};charset=utf-8,` + encodeURIComponent(content);
+  a.download = filename;
+  a.click();
+  toast('Exported!', 'success');
+}
+
+// ================================================================
+// Utility helpers
+// ================================================================
+function setLoading(btnId, loading, loadText) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  if (loading && loadText) btn.textContent = loadText;
+}
+
+function showResult(containerId, text, type) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = `<div class="result-box ${type||''}">${text}</div>`;
+}
+
+function toast(msg, type) {
+  const c   = document.getElementById('toast-container');
+  const div = document.createElement('div');
+  div.className = `toast ${type||''}`;
+  div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'ℹ️'} ${msg}`;
+  c.appendChild(div);
+  setTimeout(() => div.remove(), 3500);
+}
+
+function showModal(title, msg, buttons) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-msg').textContent   = msg;
+  const actions = document.getElementById('modal-actions');
+  actions.innerHTML = '';
+  buttons.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className   = b.cls;
+    btn.textContent = b.label;
+    btn.onclick = () => {
+      document.getElementById('modal-overlay').classList.remove('open');
+      if (b.action) b.action();
+    };
+    actions.appendChild(btn);
+  });
+  document.getElementById('modal-overlay').classList.add('open');
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+});
+</script>
 </body>
 </html>
