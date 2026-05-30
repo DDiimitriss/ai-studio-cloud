@@ -82,9 +82,8 @@ DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
 # Only true image-generation models (not chat models) should be here.
 # ---------------------------------------------------------------------------
 IMAGE_MODELS = [
-    "google/gemini-3.1-flash-image-preview:free",  # Nano Banana 2 – newest, best quality (free)
-    "google/gemini-2.5-flash-image-preview:free",  # Nano Banana 1 – free preview fallback
-    "google/gemini-2.5-flash-image",               # Nano Banana 1 – paid GA last resort
+    "google/gemini-2.5-flash-image-preview:free",  # Nano Banana – free preview
+    "google/gemini-2.5-flash-image",               # Nano Banana – paid GA
 ]
 
 # ---------------------------------------------------------------------------
@@ -422,30 +421,17 @@ def _download_image(url: str):
 
 
 # ===========================================================================
-# ChromaDB memory  –  safe init (won't crash if sentence-transformers missing)
+# ChromaDB memory
 # ===========================================================================
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
-
-try:
-    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-    try:
-        embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                           model_name="all-MiniLM-L6-v2")
-        memory_collection = chroma_client.get_or_create_collection(
-                                name="studio_memory",
-                                embedding_function=embedding_fn,
-                                metadata={"hnsw:space": "cosine"})
-        print("[Memory] ChromaDB + SentenceTransformer OK")
-    except Exception as emb_err:
-        print(f"[Memory] SentenceTransformer unavailable ({emb_err}), using default embedding")
-        memory_collection = chroma_client.get_or_create_collection(
-                                name="studio_memory",
-                                metadata={"hnsw:space": "cosine"})
-except Exception as chroma_err:
-    print(f"[Memory] ChromaDB failed ({chroma_err}), using in-memory fallback")
-    chroma_client     = chromadb.Client()
-    memory_collection = chroma_client.get_or_create_collection(name="studio_memory")
+chroma_client     = chromadb.PersistentClient(path=CHROMA_PATH)
+embedding_fn      = embedding_functions.SentenceTransformerEmbeddingFunction(
+                        model_name="all-MiniLM-L6-v2")
+memory_collection = chroma_client.get_or_create_collection(
+                        name="studio_memory",
+                        embedding_function=embedding_fn,
+                        metadata={"hnsw:space": "cosine"})
 
 
 def store_memory(user_input: str, action: str, output: str, metadata: dict = None):
