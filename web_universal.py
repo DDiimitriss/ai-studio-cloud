@@ -82,8 +82,9 @@ DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
 # Only true image-generation models (not chat models) should be here.
 # ---------------------------------------------------------------------------
 IMAGE_MODELS = [
-    "google/gemini-2.5-flash-image-preview:free",  # Nano Banana – free preview
-    "google/gemini-2.5-flash-image",               # Nano Banana – paid GA
+    "x-ai/grok-imagine-image-quality:free",        # Grok free image gen (working May 2026)
+    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, current)
+    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, stable)
 ]
 
 # ---------------------------------------------------------------------------
@@ -315,8 +316,9 @@ def generate_image_with_openrouter(prompt: str, image_base64: str = None):
     last_error = "Unknown error"
     for img_model in IMAGE_MODELS:
         payload = {
-            "model":    img_model,
-            "messages": [{"role": "user", "content": content_parts}],
+            "model":      img_model,
+            "messages":   [{"role": "user", "content": content_parts}],
+            "modalities": ["image", "text"],   # ★ Tells OpenRouter we want an image back
         }
         try:
             resp = requests.post(OPENROUTER_URL, headers=headers,
@@ -421,17 +423,30 @@ def _download_image(url: str):
 
 
 # ===========================================================================
-# ChromaDB memory
+# ChromaDB memory  –  safe init (won't crash if sentence-transformers missing)
 # ===========================================================================
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
-chroma_client     = chromadb.PersistentClient(path=CHROMA_PATH)
-embedding_fn      = embedding_functions.SentenceTransformerEmbeddingFunction(
-                        model_name="all-MiniLM-L6-v2")
-memory_collection = chroma_client.get_or_create_collection(
-                        name="studio_memory",
-                        embedding_function=embedding_fn,
-                        metadata={"hnsw:space": "cosine"})
+
+try:
+    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+    try:
+        embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                           model_name="all-MiniLM-L6-v2")
+        memory_collection = chroma_client.get_or_create_collection(
+                                name="studio_memory",
+                                embedding_function=embedding_fn,
+                                metadata={"hnsw:space": "cosine"})
+        print("[Memory] ChromaDB + SentenceTransformer OK")
+    except Exception as emb_err:
+        print(f"[Memory] SentenceTransformer unavailable ({emb_err}), using default embedding")
+        memory_collection = chroma_client.get_or_create_collection(
+                                name="studio_memory",
+                                metadata={"hnsw:space": "cosine"})
+except Exception as chroma_err:
+    print(f"[Memory] ChromaDB failed ({chroma_err}), using in-memory fallback")
+    chroma_client     = chromadb.Client()
+    memory_collection = chroma_client.get_or_create_collection(name="studio_memory")
 
 
 def store_memory(user_input: str, action: str, output: str, metadata: dict = None):
