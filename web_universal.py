@@ -24,6 +24,7 @@ import re
 import time
 import hashlib
 import json
+import threading
 import requests
 import importlib.util
 import base64
@@ -69,11 +70,11 @@ OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
 # Tried in order; skips a model on 400 / 404 / 429 / 402 and tries the next.
 # ---------------------------------------------------------------------------
 FREE_TEXT_MODELS = [
-    "meta-llama/llama-4-scout:free",       # fastest, low-latency, great for chat
-    "meta-llama/llama-4-maverick:free",    # 128K context, supports vision input
-    "deepseek/deepseek-v3:free",           # strong reasoning & coding
-    "qwen/qwen3-coder:free",               # best free coding model (1M ctx)
-    "openrouter/free",                     # last-resort wildcard
+    "meta-llama/llama-4-scout:free",        # default — fastest, low-latency
+    "meta-llama/llama-4-maverick:free",     # 1M context, vision input
+    "deepseek/deepseek-v3:free",            # strong reasoning & coding
+    "deepseek/deepseek-v4-flash:free",      # smart reasoning
+    "openai/gpt-oss-120b:free",             # 117B MoE, great all-rounder (chain terminus)
 ]
 DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
 
@@ -110,6 +111,9 @@ VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {VIDEO_MODEL} | {
 # Response cache – must be defined before any function that references it
 _openrouter_cache: dict = {}
 
+# Persistent HTTP session – reuses TLS connections across all OpenRouter calls
+_http_session = requests.Session()
+
 # Server-side video session state.
 # Flask sessions are cookie-based; writes inside a streaming generator are lost
 # because the Set-Cookie header is sent before the generator body runs.
@@ -117,6 +121,34 @@ _openrouter_cache: dict = {}
 # that IS safely written into the Flask cookie in the route function body,
 # before the generator starts.
 _video_sessions: dict = {}
+
+
+# ===========================================================================
+# System stats – non-blocking CPU sampling + one-time GPU probe
+# ===========================================================================
+_cpu_percent_cache: float = 0.0
+_HAS_GPU: bool = False
+
+def _probe_gpu() -> bool:
+    """Check once at startup whether nvidia-smi exists and has a GPU."""
+    try:
+        r = subprocess.run(["nvidia-smi", "-L"],
+                           capture_output=True, text=True, timeout=1)
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
+
+_HAS_GPU = _probe_gpu()
+
+def _cpu_sampler_loop():
+    """Background daemon: prime the counter then sample every 5 s (non-blocking)."""
+    global _cpu_percent_cache
+    psutil.cpu_percent()          # prime — first call always returns 0.0
+    while True:
+        time.sleep(5)
+        _cpu_percent_cache = psutil.cpu_percent(interval=None)
+
+threading.Thread(target=_cpu_sampler_loop, daemon=True).start()
 
 
 def _vid_sid() -> str:
@@ -185,8 +217,8 @@ def ask_openrouter(prompt: str, model: str = None, use_cache: bool = True):
         }
 
         try:
-            resp = requests.post(OPENROUTER_URL, headers=headers,
-                                 json=payload, timeout=60)
+            resp = _http_session.post(OPENROUTER_URL, headers=headers,
+                                      json=payload, timeout=60)
 
             if resp.status_code in (400, 402, 404, 429):
                 print(f"[ask_openrouter] {try_model} → HTTP {resp.status_code}, trying next…")
@@ -249,8 +281,8 @@ def ask_openrouter_stream(prompt: str, model: str = None):
             "stream":   True,
         }
         try:
-            with requests.post(OPENROUTER_URL, headers=headers,
-                               json=payload, stream=True, timeout=120) as resp:
+            with _http_session.post(OPENROUTER_URL, headers=headers,
+                                    json=payload, stream=True, timeout=120) as resp:
 
                 if resp.status_code in (400, 402, 404, 429):
                     print(f"[stream] {try_model} → HTTP {resp.status_code}, trying next…")
@@ -344,8 +376,8 @@ def generate_image_with_openrouter(prompt: str, image_base64: str = None):
             "modalities": ["image", "text"],   # ★ Tells OpenRouter we want an image back
         }
         try:
-            resp = requests.post(OPENROUTER_URL, headers=headers,
-                                 json=payload, timeout=120)
+            resp = _http_session.post(OPENROUTER_URL, headers=headers,
+                                      json=payload, timeout=120)
 
             if resp.status_code in (400, 402, 404, 429):
                 last_error = f"Model {img_model} returned HTTP {resp.status_code}"
@@ -594,46 +626,243 @@ def generate_video_with_openrouter(prompt: str,
 
 
 # ===========================================================================
-# ChromaDB memory  –  safe init (won't crash if sentence-transformers missing)
+# ChromaDB memory  –  lazy init (loads on first use, not at import time)
 # ===========================================================================
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 
-try:
-    chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+chroma_client:     object = None
+memory_collection: object = None
+_memory_ready:     bool   = False
+
+
+def _init_memory():
+    """Initialize ChromaDB + embedding model on first use. Safe to call multiple times."""
+    global chroma_client, memory_collection, _memory_ready
+    if _memory_ready:
+        return
+    _memory_ready = True   # set before init to block re-entrant calls
     try:
-        embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                           model_name="all-MiniLM-L6-v2")
-        memory_collection = chroma_client.get_or_create_collection(
-                                name="studio_memory",
-                                embedding_function=embedding_fn,
-                                metadata={"hnsw:space": "cosine"})
-        print("[Memory] ChromaDB + SentenceTransformer OK")
-    except Exception as emb_err:
-        print(f"[Memory] SentenceTransformer unavailable ({emb_err}), using default embedding")
-        memory_collection = chroma_client.get_or_create_collection(
-                                name="studio_memory",
-                                metadata={"hnsw:space": "cosine"})
-except Exception as chroma_err:
-    print(f"[Memory] ChromaDB failed ({chroma_err}), using in-memory fallback")
-    chroma_client     = chromadb.Client()
-    memory_collection = chroma_client.get_or_create_collection(name="studio_memory")
+        chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
+        try:
+            embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                               model_name="all-MiniLM-L6-v2")
+            memory_collection = chroma_client.get_or_create_collection(
+                                    name="studio_memory",
+                                    embedding_function=embedding_fn,
+                                    metadata={"hnsw:space": "cosine"})
+            print("[Memory] ChromaDB + SentenceTransformer ready")
+        except Exception as emb_err:
+            print(f"[Memory] SentenceTransformer unavailable ({emb_err}), using default embedding")
+            memory_collection = chroma_client.get_or_create_collection(
+                                    name="studio_memory",
+                                    metadata={"hnsw:space": "cosine"})
+    except Exception as chroma_err:
+        print(f"[Memory] ChromaDB failed ({chroma_err}), using in-memory fallback")
+        chroma_client     = chromadb.EphemeralClient()
+        memory_collection = chroma_client.get_or_create_collection(name="studio_memory")
+
+
+# ---------------------------------------------------------------------------
+# Memory tuning constants  (easy to adjust without touching logic)
+# ---------------------------------------------------------------------------
+MEMORY_RELEVANCE_THRESHOLD = 0.75   # cosine distance; lower = stricter relevance filter
+MEMORY_DUPLICATE_THRESHOLD = 0.15   # skip storing if a near-identical entry already exists
+
+# ---------------------------------------------------------------------------
+# Prompt quality constants
+# ---------------------------------------------------------------------------
+_CHAT_SYSTEM = (
+    "You are a knowledgeable, direct assistant. "
+    "Give clear and well-structured answers. "
+    "Be concise for simple questions; go into detail when the topic genuinely needs it. "
+    "Do not pad answers with filler phrases or unnecessary affirmations."
+)
+
+_IMG_QUALITY_SUFFIX = (
+    ", professional lighting, high resolution, sharp focus, "
+    "detailed, high quality, photorealistic"
+)
+
+# Keywords that indicate the user already specified a style — don't override
+_IMG_STYLE_KEYWORDS = (
+    "photorealistic", "8k", "4k", "hd", "high resolution", "cinematic",
+    "oil painting", "watercolor", "anime", "sketch", "illustration",
+    "cartoon", "3d render", "digital art", "low poly", "pixel art",
+)
+
+def enhance_image_prompt(prompt: str) -> str:
+    """Append quality/style suffix unless the user already specified style intent."""
+    lower = prompt.lower()
+    if any(kw in lower for kw in _IMG_STYLE_KEYWORDS):
+        return prompt
+    return prompt + _IMG_QUALITY_SUFFIX
+
+
+# ---------------------------------------------------------------------------
+# Multi-step chain constants
+# ---------------------------------------------------------------------------
+MAX_CHAIN_STEPS = 5
+
+_TOOL_LABELS = {
+    "chat":             "Chat reply",
+    "search":           "Web search",
+    "website":          "Website",
+    "app_gen":          "Code file",
+    "image_generation": "Image",
+    "video_generation": "Video",
+    "clone":            "Site clone",
+    "refine_html":      "HTML refinement",
+    "refine_code":      "Code refinement",
+    "code_to_html":     "HTML conversion",
+}
+
+# ---------------------------------------------------------------------------
+# User profile – JSON sidecar for durable personal facts
+# Always injected at the top of every chat prompt regardless of query.
+# ---------------------------------------------------------------------------
+USER_PROFILE_PATH = os.path.join(CHROMA_PATH, "user_profile.json")
+
+
+def load_user_profile() -> dict:
+    try:
+        with open(USER_PROFILE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_user_profile(profile: dict):
+    with open(USER_PROFILE_PATH, "w", encoding="utf-8") as f:
+        json.dump(profile, f, indent=2, ensure_ascii=False)
+
+
+def update_user_profile(key: str, value: str):
+    p = load_user_profile()
+    p[key.lower().replace(" ", "_")] = value
+    save_user_profile(p)
+
+
+def get_profile_context() -> str:
+    """Return a compact [User Profile] block, or '' if no facts are known."""
+    p = load_user_profile()
+    if not p:
+        return ""
+    lines = " | ".join(f"{k.replace('_', ' ').title()}: {v}" for k, v in p.items())
+    return f"[User Profile]\n{lines}\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Fact extraction  –  runs on every user message; populates user_profile.json
+# and handles explicit "remember that X" → ChromaDB store.
+# ---------------------------------------------------------------------------
+_REMEMBER_RE = re.compile(
+    r"(?:please\s+)?(?:remember(?:\s+that)?|note(?:\s+that)?|don'?t\s+forget(?:\s+that)?"
+    r"|keep\s+in\s+mind(?:\s+that)?)[:\s]+(.+)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def extract_and_store_facts(message: str) -> bool:
+    """
+    Extract durable personal facts → user_profile.json.
+    Explicit 'remember that X' → ChromaDB store_memory.
+    Returns True if at least one fact was found/stored.
+    """
+    found = False
+
+    # Explicit memory requests → store in ChromaDB
+    rem = _REMEMBER_RE.search(message)
+    if rem:
+        store_memory(message, "explicit_memory", rem.group(1).strip())
+        found = True
+
+    # Name
+    nm = re.search(r"(?:my name is|call me)\s+(\w+(?:\s+\w+)?)", message, re.IGNORECASE)
+    if nm:
+        update_user_profile("name", nm.group(1).strip())
+        found = True
+
+    # Business / project
+    bm = re.search(
+        r"(?:my\s+(?:business|company|startup|app|site|website|product)\s+is"
+        r"|i(?:'m|\s+am)\s+building)\s+([^.,!?\n]{3,60})",
+        message, re.IGNORECASE)
+    if bm:
+        update_user_profile("business", bm.group(1).strip())
+        found = True
+
+    # Role
+    rm = re.search(
+        r"i(?:'m|\s+am)\s+(?:a\s+|an\s+)?([a-zA-Z][a-zA-Z ]{2,30}?)"
+        r"(?:\s+(?:by trade|professionally|by profession))"
+        r"(?:[.,!?]|$)", message)
+    if rm:
+        update_user_profile("role", rm.group(1).strip())
+        found = True
+
+    # Preference – accumulate as comma-separated
+    pm = re.search(r"i\s+(?:prefer|love|like|enjoy)\s+([^.,!?\n]{3,60})",
+                   message, re.IGNORECASE)
+    if pm:
+        profile = load_user_profile()
+        existing = profile.get("preferences", "")
+        pref_val = pm.group(1).strip()
+        if pref_val.lower() not in existing.lower():
+            update_user_profile("preferences",
+                                (existing + ", " + pref_val).lstrip(", ") if existing else pref_val)
+        found = True
+
+    # Location
+    lm = re.search(
+        r"i(?:'m|\s+am)\s+(?:based\s+in|from|living\s+in)\s+"
+        r"([A-Z][a-zA-Z ,]{2,40}?)(?:[.,!?]|$)", message)
+    if lm:
+        update_user_profile("location", lm.group(1).strip())
+        found = True
+
+    return found
 
 
 def store_memory(user_input: str, action: str, output: str, metadata: dict = None):
+    _init_memory()
     doc_id = f"{int(time.time())}_{hashlib.md5(user_input.encode()).hexdigest()[:8]}"
     doc    = f"User: {user_input}\nAction: {action}\nOutput: {output[:500]}"
+    # Change 6: duplicate guard – skip if a near-identical entry already exists
+    try:
+        if memory_collection.count() > 0:
+            chk = memory_collection.query(
+                query_texts=[doc], n_results=1, include=["distances"])
+            if (chk and chk["distances"] and chk["distances"][0] and
+                    chk["distances"][0][0] < MEMORY_DUPLICATE_THRESHOLD):
+                return  # near-duplicate found, skip
+    except Exception:
+        pass
     meta   = {"user_input": user_input, "action": action, "timestamp": time.time()}
     if metadata:
         meta.update(metadata)
     memory_collection.upsert(documents=[doc], metadatas=[meta], ids=[doc_id])
 
 
-def recall_memory(query: str, n_results: int = 3):
-    results = memory_collection.query(query_texts=[query], n_results=n_results)
-    if results and results["documents"] and results["documents"][0]:
-        return results["documents"][0]
-    return []
+def recall_memory(query: str, n_results: int = 3) -> list:
+    _init_memory()
+    # Change 2: filter by relevance threshold; return [] rather than noise
+    try:
+        count = memory_collection.count()
+    except Exception:
+        return []
+    if count == 0:
+        return []
+    n = min(n_results, count)
+    results = memory_collection.query(
+        query_texts=[query], n_results=n,
+        include=["documents", "distances"])
+    if not results or not results["documents"] or not results["documents"][0]:
+        return []
+    return [
+        doc for doc, dist in zip(results["documents"][0], results["distances"][0])
+        if dist <= MEMORY_RELEVANCE_THRESHOLD
+    ]
 
 
 # ===========================================================================
@@ -780,21 +1009,27 @@ _IMG2VID_CONSISTENCY = (
 
 def is_video_request(message: str) -> bool:
     keywords = [
-        "make a video", "create a video", "generate a video", "generate video",
-        "video of", "video clip", "animate", "animation of",
-        "make an animation", "create an animation", "create animation",
+        "make a video", "make me a video", "create a video", "generate a video",
+        "generate video", "generate me a video", "video of", "video clip",
+        "video clip of", "video showing", "short video", "create a clip",
+        "make a clip", "animate", "animation of", "make an animation",
+        "create an animation", "create animation",
     ]
     return any(kw in message.lower() for kw in keywords)
 
 
 def is_image_request(message: str) -> bool:
     keywords = [
-        "draw", "generate image", "create an image", "generate a picture",
-        "make an image", "image of", "picture of", "create a picture",
-        "generate a photo", "sketch", "illustrate", "visualize",
-        "nano banana", "paint a", "design an image",
+        "draw me ", "draw me a ",
+        "generate image", "generate an image", "create an image",
+        "generate a picture", "make an image", "make a picture",
+        "image of", "picture of", "create a picture", "generate a photo",
+        "create a photo", "generate art", "create artwork", "render a ",
+        "make a drawing", "sketch of", "illustrate", "visualize",
+        "show me an image of", "nano banana", "paint a", "design an image",
     ]
-    return any(kw in message.lower() for kw in keywords)
+    lower = message.lower()
+    return any(kw in lower for kw in keywords)
 
 
 def _extract_html(text: str):
@@ -1139,37 +1374,38 @@ def route_chat():
 
     # Auto-route image requests
     if is_image_request(message):
-        path, err = generate_image_with_openrouter(message)
+        _img_enhance_flag = d.get("img_enhance", True)
+        _img_p = enhance_image_prompt(message) if _img_enhance_flag else message
+        path, err = generate_image_with_openrouter(_img_p)
         if err:
             return jsonify({"reply": f"❌ Image generation failed: {err}"})
         img_url = f"/{path.replace(os.sep, '/')}"
         store_memory(message, "image_generation", f"Generated image at {path}")
         return jsonify({"reply": f"✅ Image generated!\n![Generated Image]({img_url})"})
 
-    relevant      = recall_memory(message, n_results=5)
-    memory_context = ("Relevant past memories:\n" + "\n".join(relevant) + "\n\n"
-                      if relevant else "")
+    # Change 4: extract durable facts + handle "remember that X"
+    extract_and_store_facts(message)
 
-    name_m = re.search(r"(my name is|call me|i am) (\w+)", message, re.IGNORECASE)
-    if name_m:
-        store_memory(message, "personal_info", f"User's name is {name_m.group(2)}")
-        memory_context += f"IMPORTANT: The user's name is {name_m.group(2)}.\n"
-
-    if re.search(r"(i like|i prefer|my favorite|i love)", message, re.IGNORECASE):
-        store_memory(message, "preference", message)
+    # Change 5: profile always first, then relevant memories
+    profile_ctx = get_profile_context()
+    relevant    = recall_memory(message, n_results=5)
+    mem_block   = ("Relevant context:\n" +
+                   "\n".join(f"• {m}" for m in relevant) + "\n\n") if relevant else ""
 
     if "conv_history" not in session:
         session["conv_history"] = []
     history = session["conv_history"]
 
-    prompt = "You are a helpful AI assistant that remembers past conversations.\n"
-    prompt += memory_context
+    prompt  = _CHAT_SYSTEM + "\n"
+    prompt += profile_ctx
+    prompt += mem_block
     for msg in history[-10:]:
         prompt += f"{msg['role']}: {msg['content']}\n"
     prompt += f"User: {message}\nAssistant:"
 
     reply, token_info = ask_openrouter(prompt, model=model, use_cache=False)
-    store_memory(message, "chat_interaction", reply)
+    # Change 3: no longer store every chat reply as a memory (low-value noise).
+    # explicit "remember that X" is already stored by extract_and_store_facts.
     history.append({"role": "user",      "content": message})
     history.append({"role": "assistant", "content": reply})
     session["conv_history"] = history[-20:]
@@ -1213,7 +1449,9 @@ def route_gemini_image():
     d = request.get_json()
     if not d.get("prompt"):
         return jsonify({"error": "No prompt provided"})
-    path, err = generate_image_with_openrouter(d["prompt"], d.get("image"))
+    _img_enhance_flag = d.get("img_enhance", True)
+    _prompt = enhance_image_prompt(d["prompt"]) if _img_enhance_flag else d["prompt"]
+    path, err = generate_image_with_openrouter(_prompt, d.get("image"))
     if err:
         return jsonify({"error": err})
     return jsonify({"path": path, "status": "success"})
@@ -1272,6 +1510,28 @@ def route_generate_video():
         "cost":      cost,
         "status":    "success",
     })
+
+
+@app.route("/get_profile")
+def get_profile():
+    return jsonify({"profile": load_user_profile()})
+
+
+@app.route("/update_profile", methods=["POST"])
+def route_update_profile():
+    d = request.get_json() or {}
+    key   = (d.get("key") or "").strip()
+    value = (d.get("value") or "").strip()
+    if not key or not value:
+        return jsonify({"error": "key and value required"}), 400
+    update_user_profile(key, value)
+    return jsonify({"status": "ok", "profile": load_user_profile()})
+
+
+@app.route("/clear_profile", methods=["POST"])
+def route_clear_profile():
+    save_user_profile({})
+    return jsonify({"status": "cleared"})
 
 
 @app.route("/list_memories")
@@ -1377,20 +1637,21 @@ def autocomplete():
 def system_stats():
     mem = psutil.virtual_memory()
     gpu = {}
-    try:
-        r = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
-             "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2)
-        if r.returncode == 0:
-            gu, mu, mt = r.stdout.strip().split(", ")
-            gpu = {"gpu_percent": int(gu),
-                   "gpu_mem_used_gb": float(mu)/1024,
-                   "gpu_mem_total_gb": float(mt)/1024}
-    except Exception:
-        pass
+    if _HAS_GPU:
+        try:
+            r = subprocess.run(
+                ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=2)
+            if r.returncode == 0:
+                gu, mu, mt = r.stdout.strip().split(", ")
+                gpu = {"gpu_percent": int(gu),
+                       "gpu_mem_used_gb": float(mu)/1024,
+                       "gpu_mem_total_gb": float(mt)/1024}
+        except Exception:
+            pass
     return jsonify({
-        "cpu_percent":  psutil.cpu_percent(interval=0.5),
+        "cpu_percent":  _cpu_percent_cache,
         "ram_percent":  mem.percent,
         "ram_used_gb":  round(mem.used  / 1024**3, 1),
         "ram_total_gb": round(mem.total / 1024**3, 1),
@@ -1411,6 +1672,7 @@ def stream_smart_agent():
     request_text = request.args.get("request", "")
     style_guide  = request.args.get("styleGuide", "")
     model        = sanitize_model(request.args.get("model", DEFAULT_TEXT_MODEL))
+    img_enhance  = request.args.get("img_enhance", "true").lower() != "false"
 
     if not request_text:
         return Response(
@@ -1422,6 +1684,27 @@ def stream_smart_agent():
     _vsid = _vid_sid()
 
     def generate():
+        # ── Pending chain video continuation ──────────────────────────
+        if re.search(r'\byes\b.*\bvideo\b', request_text.lower()):
+            last = _video_sessions.get(_vsid, {})
+            if last.get("pending_chain"):
+                vid_prompt = last.get("prompt", request_text)
+                dur  = last.get("duration", 3)
+                cost = round(dur * 0.05, 2)
+                yield f"data: {json.dumps({'result': f'Video job submitted ({dur}s, ~${cost})…', 'tool': 'video_generation'})}\n\n"
+                path, err = generate_video_with_openrouter(vid_prompt, duration=dur)
+                if err:
+                    yield f"data: {json.dumps({'error': err})}\n\n"
+                else:
+                    video_url    = f"/{path.replace(os.sep, '/')}"
+                    video_result = (f"{dur}-second draft (~${cost})!\n\n"
+                                   f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
+                    _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
+                    store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
+                    yield f"data: {json.dumps({'result': video_result, 'path': path, 'tool': 'video_generation'})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'model_used': model})}\n\n"
+                return
+
         # ── Video follow-up commands (BEFORE new video check) ──────────
         followup = is_video_followup(request_text)
         if followup:
@@ -1525,36 +1808,40 @@ def stream_smart_agent():
             return
 
         # ── Tool-routing decision ──────────────────────────────────────
+        extract_and_store_facts(request_text)
         memories     = recall_memory(request_text, n_results=5)
         mem_ctx      = "\n".join(memories) if memories else "No past tasks."
+        profile_ctx  = get_profile_context()
         plugins_text = (
             "\n".join(f"- plugin_{k}: {v['description']}"
                       for k, v in get_plugins_info().items())
             or "No plugins available."
         )
 
-        decision_prompt = f"""You are a smart assistant that plans tool sequences.
+        decision_prompt = f"""You are a routing assistant. Pick the right tool for the user's request.
 
-Memory:
+{profile_ctx}Recent memory:
 {mem_ctx}
 
-Built-in tools:
-- website: generate HTML site. Args: task, filename (optional)
-- refine_html: improve HTML. Args: html, instruction
-- code_to_html: convert code to HTML. Args: code
-- refine_code: modify code. Args: code, instruction
-- search: web search. Args: query
-- app_gen: generate script. Args: description, language (python|powershell|bash|batch), filename (optional)
-- clone: clone a website. Args: url
-- video_generation: generate a video from a text prompt. Args: prompt
-- chat: general conversation. Args: message
+Available tools — choose EXACTLY one (or an ordered array for multi-step):
+- website: USE when asked to build/create/generate a webpage, site, landing page, or HTML. Args: task, filename (optional)
+- app_gen: USE when asked to write a script, program, or code file. Args: description, language (python|powershell|bash|batch), filename (optional)
+- search: USE ONLY when the user explicitly says "search", "look up", "find online", or asks for live/recent information. Do NOT use for creative or generative tasks. Args: query
+- clone: USE when asked to clone or copy a website from a URL. Args: url
+- image_generation: USE when asked to draw, generate, create, or render an image or picture. Args: prompt
+- refine_html: USE when asked to improve or modify existing HTML. Args: html, instruction
+- refine_code: USE when asked to modify existing code. Args: code, instruction
+- code_to_html: USE when asked to convert code into an HTML page. Args: code
+- chat: USE for everything else — questions, explanations, conversation, opinions, general knowledge. Args: message
 
 Plugins:
 {plugins_text}
 
-Respond with ONLY a JSON object or array — no prose, no markdown, no backticks.
-Format: {{"tool": "...", "arguments": {{...}}}}
-or an array of such objects for multi-step plans.
+Rules:
+1. Respond with ONLY valid JSON — no prose, no markdown, no backticks.
+2. Format: {{"tool": "...", "arguments": {{...}}}} or an array for multi-step.
+3. When in doubt, use "chat".
+4. Never use "search" for image, video, or creative requests.
 
 User request: "{request_text}"
 Style guide: {style_guide}
@@ -1584,31 +1871,65 @@ Style guide: {style_guide}
                 try:
                     decision = json.loads(m.group(1))
                 except Exception:
-                    yield f"data: {json.dumps({'error': f'Could not parse routing decision: {clean[:200]}'})}\n\n"
-                    yield f"data: {json.dumps({'done': True})}\n\n"
-                    return
+                    # Change 6: fall back to chat instead of erroring
+                    decision = {"tool": "chat", "arguments": {"message": request_text}}
             else:
-                yield f"data: {json.dumps({'error': f'Could not parse routing decision: {clean[:200]}'})}\n\n"
-                yield f"data: {json.dumps({'done': True})}\n\n"
-                return
+                # Change 6: fall back to chat instead of erroring
+                decision = {"tool": "chat", "arguments": {"message": request_text}}
 
         decisions = [decision] if isinstance(decision, dict) else decision
+
+        # Step C: cap chain length
+        if len(decisions) > MAX_CHAIN_STEPS:
+            decisions = decisions[:MAX_CHAIN_STEPS]
+            yield f"data: {json.dumps({'warning': f'Chain capped at {MAX_CHAIN_STEPS} steps.'})}\n\n"
+
+        is_chain    = len(decisions) > 1
+        step_results = []   # Step A: [{tool, summary, label}]
+
+        def _prev_ctx():
+            """Step B: build forwarding context block from completed steps."""
+            if not step_results:
+                return ""
+            lines = "\n".join(
+                f"[Step {i+1} – {r['tool']}] {r['summary']}"
+                for i, r in enumerate(step_results)
+            )
+            return f"Previous steps context:\n{lines}\n\n"
 
         for step_idx, action in enumerate(decisions):
             tool = action.get("tool", "")
             args = action.get("arguments", {})
             yield f"data: {json.dumps({'step_start': tool, 'step_index': step_idx})}\n\n"
-            err_flag = False
+            err_flag    = False
+            step_summary = ""
 
             try:
                 # ── chat ───────────────────────────────────────────────
                 if tool == "chat":
-                    msg     = args.get("message", request_text)
-                    mem     = recall_memory(msg, n_results=3)
-                    prompt  = ("Memory:\n" + "\n".join(mem) + "\n\n" if mem else "")
+                    msg = args.get("message", request_text)
+                    # facts + memories already fetched in routing phase; reuse to avoid
+                    # a second ChromaDB embedding call on the same request text
+                    profile_ctx = get_profile_context()
+                    mem         = memories[:3]   # routing fetched n_results=5; we need 3
+                    mem_block   = ("Relevant context:\n" +
+                                   "\n".join(f"• {m}" for m in mem) + "\n\n") if mem else ""
+                    prompt  = _CHAT_SYSTEM + "\n"
+                    prompt += profile_ctx
+                    prompt += _prev_ctx()   # Step B: inject prior results
+                    prompt += mem_block
                     prompt += f"User: {msg}\nAssistant:"
+                    chat_buf = []           # Step F: capture reply for forwarding
                     for chunk in ask_openrouter_stream(prompt, model=model):
                         yield chunk
+                        if chunk.startswith("data: "):
+                            try:
+                                cd = json.loads(chunk[6:])
+                                if "token" in cd:
+                                    chat_buf.append(cd["token"])
+                            except Exception:
+                                pass
+                    step_summary = "".join(chat_buf)[:600]
 
                 # ── search ─────────────────────────────────────────────
                 elif tool == "search":
@@ -1618,6 +1939,7 @@ Style guide: {style_guide}
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         yield f"data: {json.dumps({'result': res['results'], 'tool': 'search'})}\n\n"
+                        step_summary = res["results"][:600]
 
                 # ── clone ──────────────────────────────────────────────
                 elif tool == "clone":
@@ -1625,10 +1947,11 @@ Style guide: {style_guide}
                     if not url.startswith(("http://", "https://")):
                         url = "https://" + url
                     ts = time.strftime("%Y%m%d_%H%M%S")
-                    yield f"data: {json.dumps({'result': '🌐 Starting clone…', 'tool': 'clone'})}\n\n"
+                    yield f"data: {json.dumps({'result': 'Starting clone…', 'tool': 'clone'})}\n\n"
                     try:
                         idx_path, cdir = clone_website(url, f"cloned_site_{ts}")
-                        yield f"data: {json.dumps({'result': f'✅ Clone complete! Saved to {cdir}', 'path': idx_path, 'directory': cdir, 'tool': 'clone'})}\n\n"
+                        step_summary = f"Cloned site saved to {cdir}"
+                        yield f"data: {json.dumps({'result': f'Clone complete! Saved to {cdir}', 'path': idx_path, 'directory': cdir, 'tool': 'clone'})}\n\n"
                         yield f"data: {json.dumps({'clone_preview': cdir})}\n\n"
                     except Exception as exc:
                         err_flag = True
@@ -1641,19 +1964,21 @@ Style guide: {style_guide}
                     key   = "error" if "error" in res else "result"
                     if key == "error":
                         err_flag = True
+                    else:
+                        step_summary = str(res.get("result", ""))[:400]
                     yield f"data: {json.dumps({key: res[key], 'tool': tool})}\n\n"
 
                 # ── website ────────────────────────────────────────────
                 elif tool == "website":
-                    res, ti = generate_website(
-                        args.get("task", request_text),
-                        args.get("filename", "website"),
-                        style_guide, model)
+                    prev = _prev_ctx()
+                    task = (prev + args.get("task", request_text)) if prev else args.get("task", request_text)
+                    res, ti = generate_website(task, args.get("filename", "website"), style_guide, model)
                     if res.get("error"):
                         err_flag = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         _p = res["path"]
+                        step_summary = f"Website saved to {_p}"
                         _payload = json.dumps({"result": f"Website saved to {_p}", "tool": "website", "html_preview": res["html"][:500], "path": _p, "token_info": ti})
                         yield f"data: {_payload}\n\n"
 
@@ -1665,6 +1990,7 @@ Style guide: {style_guide}
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         _p = res["path"]
+                        step_summary = f"Refined HTML saved to {_p}"
                         _payload = json.dumps({"result": f"Refined HTML saved to {_p}", "tool": "refine_html", "path": _p, "token_info": ti})
                         yield f"data: {_payload}\n\n"
 
@@ -1676,6 +2002,7 @@ Style guide: {style_guide}
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         _p = res["path"]
+                        step_summary = f"HTML saved to {_p}"
                         _payload = json.dumps({"result": f"HTML saved to {_p}", "tool": "code_to_html", "path": _p, "token_info": ti})
                         yield f"data: {_payload}\n\n"
 
@@ -1686,54 +2013,129 @@ Style guide: {style_guide}
                         err_flag = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
+                        step_summary = "Code refined"
                         _payload = json.dumps({"result": "Code refined", "tool": "refine_code", "refined_code": res["refined_code"], "token_info": ti})
                         yield f"data: {_payload}\n\n"
 
                 # ── app_gen ────────────────────────────────────────────
                 elif tool == "app_gen":
-                    res, ti = generate_app(
-                        args.get("description", request_text),
-                        args.get("language", "python"),
-                        args.get("filename", ""), model)
+                    prev = _prev_ctx()
+                    desc = (prev + args.get("description", request_text)) if prev else args.get("description", request_text)
+                    res, ti = generate_app(desc, args.get("language", "python"), args.get("filename", ""), model)
                     if res.get("error"):
                         err_flag = True
                         yield f"data: {json.dumps({'error': res['error']})}\n\n"
                     else:
                         _p = res["path"]
+                        step_summary = f"App saved to {_p}"
                         _payload = json.dumps({"result": f"App saved to {_p}", "tool": "app_gen", "path": _p, "token_info": ti})
                         yield f"data: {_payload}\n\n"
+
+                # ── image_generation ───────────────────────────────────
+                elif tool == "image_generation":
+                    if is_chain:
+                        yield f"data: {json.dumps({'cost_notice': 'Image generation uses credits (~$0.01–0.04).', 'tool': 'image_generation'})}\n\n"
+                    prev       = _prev_ctx()
+                    img_prompt = args.get("prompt", request_text)
+                    if prev:
+                        img_prompt = img_prompt + "\n\nAdditional context: " + prev.strip()
+                    if img_enhance:
+                        img_prompt = enhance_image_prompt(img_prompt)
+                    path, err = generate_image_with_openrouter(img_prompt)
+                    if err:
+                        err_flag = True
+                        yield f"data: {json.dumps({'error': err})}\n\n"
+                    else:
+                        img_url    = f"/{path.replace(os.sep, '/')}"
+                        img_result = "Image generated!\n![Generated Image](" + img_url + ")"
+                        step_summary = f"Image at {img_url}"
+                        yield f"data: {json.dumps({'result': img_result, 'path': path, 'tool': 'image_generation'})}\n\n"
 
                 # ── video_generation ───────────────────────────────────
                 elif tool == "video_generation":
                     vid_prompt = args.get("prompt", request_text)
                     dur        = extract_video_duration(vid_prompt)
-                    cost       = round(dur * 0.05, 2)
-                    yield f"data: {json.dumps({'result': f'🎬 Video job submitted ({dur}s, ~${cost})…', 'tool': 'video_generation'})}\n\n"
-                    path, err = generate_video_with_openrouter(vid_prompt, duration=dur)
-                    if err:
-                        err_flag = True
-                        yield f"data: {json.dumps({'error': err})}\n\n"
+                    cost_lo    = round(dur * 0.03, 2)
+                    cost_hi    = round(dur * 0.08, 2)
+
+                    if is_chain:
+                        # Cost safety: stop chain, store pending plan, ask user
+                        prev = _prev_ctx()
+                        if prev:
+                            vid_prompt = vid_prompt + "\n\nContext: " + prev.strip()
+                        _video_sessions[_vsid] = {
+                            "prompt":        vid_prompt,
+                            "duration":      dur,
+                            "resolution":    "480p",
+                            "pending_chain": True,
+                        }
+                        stop_msg = (
+                            f"The next step would generate a {dur}-second video "
+                            f"(~${cost_lo}–${cost_hi}). "
+                            f"Reply **'yes make the video'** to proceed, or ignore to skip."
+                        )
+                        yield f"data: {json.dumps({'result': stop_msg, 'tool': 'video_pending'})}\n\n"
+                        break   # end chain gracefully — don't set err_flag
                     else:
-                        video_url    = f"/{path.replace(os.sep, '/')}"
-                        video_result = (f"✅ {dur}-second draft (~${cost})!\n\n"
-                                        f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
-                        _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
-                        store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
-                        _vp = json.dumps({"result": video_result, "path": path, "tool": "video_generation"})
-                        yield f"data: {_vp}\n\n"
+                        # Single step: unchanged behaviour
+                        cost = round(dur * 0.05, 2)
+                        yield f"data: {json.dumps({'result': f'Video job submitted ({dur}s, ~${cost})…', 'tool': 'video_generation'})}\n\n"
+                        path, err = generate_video_with_openrouter(vid_prompt, duration=dur)
+                        if err:
+                            err_flag = True
+                            yield f"data: {json.dumps({'error': err})}\n\n"
+                        else:
+                            video_url    = f"/{path.replace(os.sep, '/')}"
+                            video_result = (f"{dur}-second draft (~${cost})!\n\n"
+                                            f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
+                            _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
+                            store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
+                            _vp = json.dumps({"result": video_result, "path": path, "tool": "video_generation"})
+                            yield f"data: {_vp}\n\n"
 
                 else:
-                    err_flag = True
-                    yield f"data: {json.dumps({'error': f'Unknown tool: {tool}'})}\n\n"
+                    # Unknown tool → fall back to chat, never error
+                    msg   = request_text
+                    mem   = recall_memory(msg, n_results=3)
+                    fb_p  = _CHAT_SYSTEM + "\n"
+                    fb_p += ("Memory:\n" + "\n".join(mem) + "\n\n" if mem else "")
+                    fb_p += f"User: {msg}\nAssistant:"
+                    chat_buf = []
+                    for chunk in ask_openrouter_stream(fb_p, model=model):
+                        yield chunk
+                        if chunk.startswith("data: "):
+                            try:
+                                cd = json.loads(chunk[6:])
+                                if "token" in cd:
+                                    chat_buf.append(cd["token"])
+                            except Exception:
+                                pass
+                    step_summary = "".join(chat_buf)[:600]
 
             except Exception as exc:
                 err_flag = True
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
+            # Step A: record result for forwarding (only on success)
+            if not err_flag and step_summary:
+                step_results.append({
+                    "tool":    tool,
+                    "summary": step_summary,
+                    "label":   _TOOL_LABELS.get(tool, tool),
+                })
+
             if err_flag:
                 break
 
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        # Step E: chain summary card
+        if is_chain and step_results:
+            summary_items = [
+                {"step": i + 1, "tool": r["tool"], "label": r["label"]}
+                for i, r in enumerate(step_results)
+            ]
+            yield f"data: {json.dumps({'chain_summary': summary_items})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'model_used': model})}\n\n"
 
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 

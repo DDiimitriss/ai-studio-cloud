@@ -239,6 +239,15 @@ body{
 }
 #attach-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--bg3)}
 #attach-btn.has-image{color:var(--accent);border-color:var(--accent);background:#3b82f622}
+#enhance-btn{
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--muted);width:36px;height:36px;border-radius:10px;
+  font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;flex-shrink:0;opacity:.5;
+}
+#enhance-btn.on{color:#f59e0b;border-color:#f59e0b44;background:#f59e0b11;opacity:1}
+#enhance-btn:hover{opacity:1}
 
 /* ── Generated image action buttons ──────────────────────────── */
 .generated-image-wrap{margin-top:8px}
@@ -269,6 +278,7 @@ body{
   transition:all .15s;
 }
 .msg-action-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+.msg-model-label{font-size:10px;color:var(--muted);margin-top:4px;font-family:var(--font-mono);opacity:.7}
 
 /* typing indicator */
 .typing-dots{display:flex;gap:4px;align-items:center;padding:8px 0}
@@ -717,6 +727,7 @@ body{
             </div>
             <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()"
                     title="Attach image for image-to-video">📎</button>
+            <button id="enhance-btn" onclick="toggleImgEnhance()" title="Auto-enhance image prompts (adds quality/lighting details)">✨</button>
             <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
             <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
             <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
@@ -745,6 +756,23 @@ let chatHistory   = [];
 let currentStream = null;
 let isGenerating  = false;
 let isRecording   = false;
+
+// Image-prompt enhancement toggle (persisted in localStorage)
+let imgEnhanceOn = localStorage.getItem('imgEnhance') !== 'false';
+function _syncEnhanceBtn() {
+  const btn = document.getElementById('enhance-btn');
+  if (!btn) return;
+  btn.classList.toggle('on', imgEnhanceOn);
+  btn.title = imgEnhanceOn
+    ? 'Image prompt enhancement ON — click to disable'
+    : 'Image prompt enhancement OFF — click to enable';
+}
+function toggleImgEnhance() {
+  imgEnhanceOn = !imgEnhanceOn;
+  localStorage.setItem('imgEnhance', imgEnhanceOn ? 'true' : 'false');
+  _syncEnhanceBtn();
+}
+document.addEventListener('DOMContentLoaded', _syncEnhanceBtn);
 let mediaRecorder = null;
 let recognition   = null;
 let currentTool   = 'chat';
@@ -769,16 +797,30 @@ document.addEventListener('DOMContentLoaded', () => {
 // ================================================================
 // Models
 // ================================================================
+const MODEL_LABELS = {
+  'meta-llama/llama-4-scout:free':    'Llama 4 Scout (free) — fast & lightweight',
+  'meta-llama/llama-4-maverick:free': 'Llama 4 Maverick (free) — vision + 1M context',
+  'deepseek/deepseek-v3:free':        'DeepSeek V3 (free) — strong reasoning & coding',
+  'deepseek/deepseek-v4-flash:free':  'DeepSeek V4 Flash (free) — smart reasoning',
+  'openai/gpt-oss-120b:free':         'GPT-OSS 120B (free) — great all-rounder',
+};
+
 async function loadModels() {
   try {
     const r    = await fetch('/models');
     const data = await r.json();
     const sel  = document.getElementById('model-select');
     sel.innerHTML = '';
-    (data.models || []).forEach(m => {
-      if (m.includes('image')) return; // hide image models from text selector
+    // Show the known free models first in a fixed friendly order, then any extras
+    const ordered = Object.keys(MODEL_LABELS);
+    const rest     = (data.models || []).filter(
+      m => !m.includes('image') && !ordered.includes(m) && m !== 'openrouter/free'
+    );
+    [...ordered, ...rest].forEach(m => {
+      if (!(data.models || []).includes(m)) return; // skip if server doesn't list it
       const o = document.createElement('option');
-      o.value = m; o.textContent = m.split('/').pop();
+      o.value = m;
+      o.textContent = MODEL_LABELS[m] || m.split('/').pop();
       sel.appendChild(o);
     });
   } catch(e) { console.warn('Could not load models', e); }
@@ -809,6 +851,13 @@ function setupAutoResize() {
 // ================================================================
 // Image attachment helpers
 // ================================================================
+function shortModelName(id) {
+  if (!id) return '';
+  const label = MODEL_LABELS[id];
+  if (label) return label.split(' — ')[0].replace(' (free)', '');
+  return id.split('/').pop().replace(':free', '').replace(/-/g, ' ');
+}
+
 function detectAspectRatio(w, h) {
   if (h > w * 1.2) return '9:16';
   if (w > h * 1.2) return '16:9';
@@ -906,7 +955,7 @@ async function sendMessage() {
 
   // Smart agent via SSE
   try {
-    const url = `/stream_smart_agent?request=${encodeURIComponent(msg)}&model=${encodeURIComponent(model)}`;
+    const url = `/stream_smart_agent?request=${encodeURIComponent(msg)}&model=${encodeURIComponent(model)}&img_enhance=${imgEnhanceOn}`;
     const es   = new EventSource(url);
     currentStream = es;
 
@@ -921,6 +970,34 @@ async function sendMessage() {
         removeTyping(typingId);
         addMsg('ai', `❌ ${d.error}`);
         doneGenerating(es);
+        return;
+      }
+
+      if (d.warning) {
+        const w = document.createElement('div');
+        w.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 8px;margin-bottom:4px';
+        w.textContent = '⚠ ' + d.warning;
+        (stepsDiv || document.getElementById('messages')).appendChild(w);
+        scrollBottom();
+        return;
+      }
+
+      if (d.cost_notice) {
+        const cn = document.createElement('div');
+        cn.style.cssText = 'font-size:11px;color:#f59e0b;padding:2px 8px;margin-bottom:4px';
+        cn.textContent = '💳 ' + d.cost_notice;
+        (stepsDiv || document.getElementById('messages')).appendChild(cn);
+        scrollBottom();
+        return;
+      }
+
+      if (d.chain_summary) {
+        const cs = document.createElement('div');
+        cs.style.cssText = 'background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:11px;color:var(--muted)';
+        cs.innerHTML = '<b style="color:var(--text)">Completed ' + d.chain_summary.length + ' steps</b> — ' +
+          d.chain_summary.map(s => `<span style="color:var(--accent)">${s.label}</span>`).join(' → ');
+        document.getElementById('messages').appendChild(cs);
+        scrollBottom();
         return;
       }
 
@@ -977,9 +1054,17 @@ async function sendMessage() {
       if (d.done) {
         if (aiText) {
           chatHistory.push({ role: 'assistant', content: aiText });
+          // Attach subtle model label to the streamed message bubble
+          if (d.model_used && _streamMsgEl) {
+            const lbl = document.createElement('div');
+            lbl.className = 'msg-model-label';
+            lbl.textContent = 'via ' + shortModelName(d.model_used);
+            const body = _streamMsgEl.querySelector('.msg-body');
+            if (body) body.appendChild(lbl);
+          }
         } else if (!stepsDiv) {
           removeTyping(typingId);
-          addMsg('ai', '✅ Done.');
+          addMsg('ai', 'Done.');
         }
         doneGenerating(es);
       }
@@ -1473,15 +1558,65 @@ async function runImageGen() {
 // ── Memory ─────────────────────────────────────────────────────
 async function renderMemoryTool(body) {
   body.innerHTML = `
+    <!-- Profile card -->
+    <div id="profile-card" style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">User Profile <span style="font-weight:400;color:var(--muted)">(always remembered)</span></div>
+      <div id="profile-facts" style="font-size:12px;color:var(--text);line-height:1.8;font-family:var(--font-mono);min-height:18px">Loading…</div>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <input class="form-input" id="prof-key"   placeholder="fact name"  style="flex:1;font-size:12px;padding:7px 10px"/>
+        <input class="form-input" id="prof-value" placeholder="value"      style="flex:2;font-size:12px;padding:7px 10px"/>
+        <button class="run-btn" style="padding:7px 12px;font-size:12px" onclick="addProfileFact()">Add</button>
+      </div>
+      <button onclick="clearProfile()" style="margin-top:8px;background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;font-family:var(--font-mono)">Clear all profile facts</button>
+    </div>
+    <!-- General memories -->
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <input class="form-input" id="mem-search" placeholder="Search memories…" style="flex:1"/>
       <button class="run-btn" style="width:80px;padding:9px" onclick="loadMemories()">Search</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:16px">
-      <button class="run-btn" style="flex:1;background:var(--amber);color:#000" onclick="compressMemory()">🗜 Compress Old</button>
+      <button class="run-btn" style="flex:1;background:var(--amber);color:#000" onclick="compressMemory()">Compress Old</button>
     </div>
     <div id="mem-list"><div style="color:var(--muted);font-size:13px">Loading…</div></div>`;
+  loadProfile();
   loadMemories();
+}
+
+async function loadProfile() {
+  try {
+    const r = await fetch('/get_profile');
+    const d = await r.json();
+    const el = document.getElementById('profile-facts');
+    if (!el) return;
+    const p = d.profile || {};
+    const keys = Object.keys(p);
+    if (!keys.length) {
+      el.textContent = 'No profile facts yet. Chat naturally and facts will be extracted automatically.';
+      return;
+    }
+    el.innerHTML = keys.map(k =>
+      `<span style="color:var(--muted)">${k.replace(/_/g,' ')}:</span> ${p[k]}`
+    ).join('<br>');
+  } catch(e) { console.warn('Profile load failed', e); }
+}
+
+async function addProfileFact() {
+  const key   = document.getElementById('prof-key')?.value.trim();
+  const value = document.getElementById('prof-value')?.value.trim();
+  if (!key || !value) { toast('Enter both a fact name and value', 'error'); return; }
+  await fetch('/update_profile', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ key, value }) });
+  document.getElementById('prof-key').value   = '';
+  document.getElementById('prof-value').value = '';
+  toast('Profile updated', 'success');
+  loadProfile();
+}
+
+async function clearProfile() {
+  if (!confirm('Clear all profile facts? This cannot be undone.')) return;
+  await fetch('/clear_profile', { method:'POST' });
+  toast('Profile cleared', 'success');
+  loadProfile();
 }
 async function loadMemories() {
   const search = document.getElementById('mem-search')?.value || '';
