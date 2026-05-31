@@ -88,9 +88,15 @@ IMAGE_MODELS = [
 ]
 
 # ---------------------------------------------------------------------------
+# Video generation model
+# ---------------------------------------------------------------------------
+VIDEO_MODEL     = "x-ai/grok-imagine-video"
+OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
+
+# ---------------------------------------------------------------------------
 # Combined whitelist (used by sanitize_model)
 # ---------------------------------------------------------------------------
-VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {
+VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {VIDEO_MODEL} | {
     "qwen/qwen3.6-plus",
     "qwen/qwen3.6-flash",
     "google/gemini-2.5-flash-preview",
@@ -103,6 +109,23 @@ VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {
 
 # Response cache – must be defined before any function that references it
 _openrouter_cache: dict = {}
+
+# Server-side video session state.
+# Flask sessions are cookie-based; writes inside a streaming generator are lost
+# because the Set-Cookie header is sent before the generator body runs.
+# Instead we store video state here, keyed by a tiny per-user ID (vid_sid)
+# that IS safely written into the Flask cookie in the route function body,
+# before the generator starts.
+_video_sessions: dict = {}
+
+
+def _vid_sid() -> str:
+    """Return (and create if needed) a stable video-session ID for this browser.
+    Must be called from a route function body – NOT inside a streaming generator."""
+    if "vid_sid" not in session:
+        session["vid_sid"] = os.urandom(8).hex()
+        session.modified = True
+    return session["vid_sid"]
 
 
 def sanitize_model(requested: str) -> str:
@@ -438,6 +461,138 @@ def _download_image(url: str):
         return None
 
 
+def _download_video(url: str, headers: dict = None):
+    try:
+        r = requests.get(url, headers=headers, timeout=120)
+        if r.status_code == 200:
+            ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filepath = os.path.join("static", "generated", f"generated_{ts}.mp4")
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(r.content)
+            return filepath
+        return None
+    except Exception as exc:
+        print(f"[_download_video] {exc}")
+        return None
+
+
+# ===========================================================================
+# Video generation  (x-ai/grok-imagine-video via OpenRouter async jobs API)
+# ===========================================================================
+def generate_video_with_openrouter(prompt: str,
+                                    duration: int = 3,
+                                    resolution: str = "480p",
+                                    aspect_ratio: str = "16:9",
+                                    image_b64: str = None):
+    """
+    Submit an async video job, poll until complete, download the mp4.
+    Returns (filepath_or_None, error_str_or_None).
+
+    duration     : 1–15 seconds. Default 3 (~$0.15). Pass 8 for the upgrade path (~$0.40).
+    resolution   : "480p" (cheap) or "720p" (HD).
+    aspect_ratio : "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "3:2" | "2:3".
+    image_b64    : optional base64 data URL (or raw b64 string) to use as the first frame
+                   for image-to-video generation.  Omit for text-only video.
+    """
+    if not OPENROUTER_API_KEY:
+        return None, "OPENROUTER_API_KEY is not set."
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type":  "application/json",
+    }
+    payload = {
+        "model":        VIDEO_MODEL,
+        "prompt":       prompt,
+        "duration":     max(1, min(15, int(duration))),
+        "resolution":   resolution,
+        "aspect_ratio": aspect_ratio,
+    }
+
+    # ── Image-to-video: attach first frame + consistency suffix ──────
+    if image_b64:
+        payload["prompt"] = prompt + _IMG2VID_CONSISTENCY
+        # Strip the data URI prefix if present — keep raw base64
+        raw_b64 = image_b64.split(",")[1] if "," in image_b64 else image_b64
+        payload["frame_images"] = [
+            {
+                "type":       "image_url",
+                "image_url":  {"url": f"data:image/jpeg;base64,{raw_b64}"},
+                "frame_type": "first_frame",
+            }
+        ]
+
+    # ── Submit job ────────────────────────────────────────────────
+    try:
+        resp = requests.post(OPENROUTER_VIDEOS_URL, headers=headers,
+                             json=payload, timeout=30)
+    except Exception as exc:
+        return None, f"Video submit request failed: {exc}"
+
+    # 200 = immediate response, 202 = accepted / queued (both are success)
+    if resp.status_code not in (200, 202):
+        return None, f"Video submit failed: HTTP {resp.status_code} – {resp.text[:300]}"
+
+    try:
+        job = resp.json()
+    except Exception:
+        return None, f"Could not parse video job response: {resp.text[:200]}"
+
+    job_id = job.get("id")
+    if not job_id:
+        return None, f"No job ID in response: {job}"
+
+    # Use the polling_url from the response if provided, otherwise build it
+    poll_url = job.get("polling_url") or f"{OPENROUTER_VIDEOS_URL}/{job_id}"
+
+    print(f"[video_gen] Job submitted: {job_id}  poll_url={poll_url}")
+
+    # ── Poll until done (max 5 minutes, 5-second intervals) ───────
+    for attempt in range(60):
+        time.sleep(5)
+        try:
+            poll = requests.get(poll_url, headers=headers, timeout=30)
+        except Exception as exc:
+            print(f"[video_gen] Poll {attempt+1} failed: {exc}")
+            continue
+
+        # 200 = data ready, 202 = still processing — both are non-error
+        if poll.status_code not in (200, 202):
+            return None, f"Poll failed: HTTP {poll.status_code} – {poll.text[:200]}"
+
+        try:
+            pdata = poll.json()
+        except Exception:
+            continue
+
+        status = pdata.get("status", "")
+        print(f"[video_gen] Poll {attempt+1}: status={status}")
+
+        if status == "completed":
+            unsigned = pdata.get("unsigned_urls")
+            video_url = (
+                (unsigned[0] if isinstance(unsigned, list) and unsigned else None) or
+                pdata.get("url") or
+                pdata.get("video_url") or
+                pdata.get("data", {}).get("url")
+            )
+            if not video_url:
+                return None, f"No video URL in completed response: {pdata}"
+            filepath = _download_video(video_url, headers=headers)
+            if filepath:
+                return filepath, None
+            return None, "Video download failed"
+
+        if status in ("failed", "error", "cancelled"):
+            reason = pdata.get("error") or pdata.get("message") or status
+            return None, f"Video job {status}: {reason}"
+
+        # still pending/processing — keep polling
+
+    return None, "Video generation timed out after 5 minutes"
+
+
 # ===========================================================================
 # ChromaDB memory  –  safe init (won't crash if sentence-transformers missing)
 # ===========================================================================
@@ -557,6 +712,79 @@ def save_file(content, filename: str) -> str:
     with open(path, mode, **kw) as f:
         f.write(content)
     return path
+
+
+def is_video_followup(message: str):
+    """
+    Detect follow-up commands for a video draft already in session.
+    Returns an action string or None:
+      "upgrade"  – user wants the full/longer version (optionally with explicit seconds)
+      "retry"    – user wants a new draft at the same settings
+      "confirm"  – user is happy; clear the session state
+
+    Upgrade detection order:
+      1. "make it <number>" regex  → catches "make it 5 seconds", "make it 10s", etc.
+      2. keyword startswith list   → catches "make it longer", "longer", "full version", etc.
+    This ensures "make a video of a dog" is NOT caught (starts with "make a", not "make it").
+    """
+    lower = message.lower().strip()
+
+    # "make it 5 seconds" / "make it 10s" / "make it 3 sec" → upgrade
+    if re.match(r'^make it\s+\d', lower):
+        return "upgrade"
+
+    upgrade_kws = ["make it longer", "make it", "longer", "full version", "make full",
+                   "upgrade", "longer version", "full video"]
+    retry_kws   = ["try again", "regenerate", "another one", "another",
+                   "redo", "new draft", "different one"]
+    confirm_kws = ["that's perfect", "thats perfect", "keep it", "perfect",
+                   "looks good", "love it", "great", "done"]
+    if any(lower == kw or lower.startswith(kw) for kw in upgrade_kws):
+        return "upgrade"
+    if any(lower == kw or lower.startswith(kw) for kw in retry_kws):
+        return "retry"
+    if any(lower == kw or lower.startswith(kw) for kw in confirm_kws):
+        return "confirm"
+    return None
+
+
+def extract_video_duration(message: str) -> int:
+    """
+    Parse an explicit duration from the user's request, e.g. "make a 10 second video".
+    Handles both singular ("second") and plural ("seconds").
+    Returns an int clamped to 1–15, defaulting to 3 if nothing found.
+    """
+    m = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', message.lower())
+    if m:
+        return max(1, min(15, int(m.group(1))))
+    return 3
+
+
+_VIDEO_FOLLOWUP_MSG = (
+    "\n\n💬 **What next?**  "
+    "· **make it longer** (or say a length, e.g. *'make it 10 seconds'*)  "
+    "· **try again** (new draft, ~$0.15)  "
+    "· **that's perfect** to keep it"
+)
+
+# Appended to the prompt only for image-to-video (image_b64 is not None).
+# Encourages the model to keep the product physically consistent across frames.
+_IMG2VID_CONSISTENCY = (
+    " The product in the image must keep its exact shape, proportions, label,"
+    " color, and design throughout the entire video. Do not morph, transform,"
+    " or change the object into anything else. Keep it physically consistent"
+    " and stable from the first frame to the last. Camera movement and"
+    " background may change, but the product itself stays identical."
+)
+
+
+def is_video_request(message: str) -> bool:
+    keywords = [
+        "make a video", "create a video", "generate a video", "generate video",
+        "video of", "video clip", "animate", "animation of",
+        "make an animation", "create an animation", "create animation",
+    ]
+    return any(kw in message.lower() for kw in keywords)
 
 
 def is_image_request(message: str) -> bool:
@@ -768,6 +996,7 @@ def health():
         "api_key_set":        bool(OPENROUTER_API_KEY),
         "text_model_chain":   FREE_TEXT_MODELS,
         "image_model_chain":  IMAGE_MODELS,
+        "video_model":        VIDEO_MODEL,
         "default_text_model": DEFAULT_TEXT_MODEL,
     })
 
@@ -857,6 +1086,57 @@ def route_chat():
     message = d.get("message", "")
     model   = sanitize_model(d.get("model", DEFAULT_TEXT_MODEL))
 
+    vsid = _vid_sid()   # ensure vid_sid is in the cookie before any return
+
+    # ── Video follow-up commands (BEFORE new video check) ────────────
+    followup = is_video_followup(message)
+    if followup:
+        last = _video_sessions.get(vsid)
+        if not last:
+            return jsonify({"reply": "No video in progress yet — send a video request first."})
+
+        if followup == "confirm":
+            _video_sessions.pop(vsid, None)
+            return jsonify({"reply": "Glad you liked it! 🎉 The video has been saved."})
+
+        if followup == "upgrade":
+            _m = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', message.lower())
+            dur = max(1, min(15, int(_m.group(1)))) if _m else 8
+            reply_prefix = f"🎬 Generating {dur}-second version…\n\n"
+        else:  # retry
+            dur = last.get("duration", 3)
+            reply_prefix = "🎬 Generating a new draft…\n\n"
+
+        _ar      = last.get("aspect_ratio", "16:9")
+        _img_b64 = last.get("image_b64")
+        path, err = generate_video_with_openrouter(
+            last["prompt"], duration=dur,
+            aspect_ratio=_ar, image_b64=_img_b64)
+        if err:
+            return jsonify({"reply": f"❌ Video generation failed: {err}"})
+        video_url = f"/{path.replace(os.sep, '/')}"
+        _video_sessions[vsid] = {
+            "prompt":       last["prompt"],
+            "duration":     dur,
+            "resolution":   last.get("resolution", "480p"),
+            "aspect_ratio": _ar,
+            "image_b64":    _img_b64,
+        }
+        store_memory(last["prompt"], "video_generation", f"Generated video at {path}")
+        return jsonify({"reply": reply_prefix + f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG})
+
+    # ── New video request ─────────────────────────────────────────────
+    if is_video_request(message):
+        dur  = extract_video_duration(message)
+        cost = round(dur * 0.05, 2)
+        path, err = generate_video_with_openrouter(message, duration=dur)
+        if err:
+            return jsonify({"reply": f"❌ Video generation failed: {err}"})
+        video_url = f"/{path.replace(os.sep, '/')}"
+        _video_sessions[vsid] = {"prompt": message, "duration": dur, "resolution": "480p"}
+        store_memory(message, "video_generation", f"Generated video at {path}")
+        return jsonify({"reply": f"✅ {dur}-second draft (~${cost})!\n\n![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG})
+
     # Auto-route image requests
     if is_image_request(message):
         path, err = generate_image_with_openrouter(message)
@@ -937,6 +1217,61 @@ def route_gemini_image():
     if err:
         return jsonify({"error": err})
     return jsonify({"path": path, "status": "success"})
+
+
+# ---------------------------------------------------------------------------
+# POST /generate_video
+# Accepts JSON: { "prompt": str, "image": "<base64 data URL or null>",
+#                 "duration": int (optional), "resolution": str (optional) }
+# Used by the frontend for image-to-video (base64 can't ride in a GET URL).
+# Also works for text-only video when "image" is absent/null.
+# ---------------------------------------------------------------------------
+_MAX_IMAGE_B64_BYTES = 8 * 1024 * 1024   # 8 MB raw base64 limit
+
+
+@app.route("/generate_video", methods=["POST"])
+def route_generate_video():
+    d      = request.get_json() or {}
+    prompt = (d.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "No prompt provided"}), 400
+
+    image_b64 = d.get("image") or None
+    if image_b64 and len(image_b64.encode()) > _MAX_IMAGE_B64_BYTES:
+        return jsonify({"error":
+            "Attached image is too large (over 8 MB). "
+            "Please resize it to under 2000×2000 px and try again."}), 400
+
+    dur          = max(1, min(15, int(d.get("duration", extract_video_duration(prompt)))))
+    resolution   = d.get("resolution", "480p")
+    aspect_ratio = d.get("aspect_ratio", "16:9")
+    vsid         = _vid_sid()
+
+    path, err = generate_video_with_openrouter(
+        prompt, duration=dur, resolution=resolution,
+        aspect_ratio=aspect_ratio, image_b64=image_b64)
+    if err:
+        return jsonify({"error": err}), 500
+
+    video_url = f"/{path.replace(os.sep, '/')}"
+    _video_sessions[vsid] = {
+        "prompt":       prompt,
+        "duration":     dur,
+        "resolution":   resolution,
+        "aspect_ratio": aspect_ratio,
+        "image_b64":    image_b64,   # None for text-only; preserved for follow-ups
+    }
+    store_memory(prompt, "video_generation", f"Generated video at {path}")
+    cost = round(dur * 0.05, 2)
+    mode = "image-to-video" if image_b64 else "text-to-video"
+    return jsonify({
+        "path":      path,
+        "video_url": video_url,
+        "duration":  dur,
+        "mode":      mode,
+        "cost":      cost,
+        "status":    "success",
+    })
 
 
 @app.route("/list_memories")
@@ -1082,7 +1417,72 @@ def stream_smart_agent():
             f"data: {json.dumps({'error': 'No request provided'})}\n\n",
             mimetype="text/event-stream")
 
+    # Capture vid_sid HERE in the route body (not inside the generator) so
+    # the Flask session cookie is saved with vid_sid before streaming starts.
+    _vsid = _vid_sid()
+
     def generate():
+        # ── Video follow-up commands (BEFORE new video check) ──────────
+        followup = is_video_followup(request_text)
+        if followup:
+            last = _video_sessions.get(_vsid)
+            if not last:
+                yield f"data: {json.dumps({'result': 'No video in progress yet — send a video request first.', 'tool': 'video_followup'})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                return
+
+            if followup == "confirm":
+                _video_sessions.pop(_vsid, None)
+                yield f"data: {json.dumps({'result': 'Glad you liked it! 🎉 The video has been saved.', 'tool': 'video_followup'})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                return
+
+            if followup == "upgrade":
+                _m  = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', request_text.lower())
+                dur = max(1, min(15, int(_m.group(1)))) if _m else 8
+            else:
+                dur = last.get("duration", 3)
+            _ar      = last.get("aspect_ratio", "16:9")
+            _img_b64 = last.get("image_b64")
+            wait_msg = f"🎬 Generating {dur}-second version…" if followup == "upgrade" else "🎬 Generating a new draft…"
+            yield f"data: {json.dumps({'result': wait_msg, 'tool': 'video_generation'})}\n\n"
+            path, err = generate_video_with_openrouter(
+                last["prompt"], duration=dur,
+                aspect_ratio=_ar, image_b64=_img_b64)
+            if err:
+                yield f"data: {json.dumps({'error': err})}\n\n"
+            else:
+                video_url    = f"/{path.replace(os.sep, '/')}"
+                video_result = "![Generated Video](" + video_url + ")" + _VIDEO_FOLLOWUP_MSG
+                _video_sessions[_vsid] = {
+                    "prompt":       last["prompt"],
+                    "duration":     dur,
+                    "resolution":   last.get("resolution", "480p"),
+                    "aspect_ratio": _ar,
+                    "image_b64":    _img_b64,
+                }
+                store_memory(last["prompt"], "video_generation", f"Generated video at {path}")
+                yield f"data: {json.dumps({'result': video_result, 'path': path, 'tool': 'video_generation'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+
+        # ── New video request ───────────────────────────────────────────
+        if is_video_request(request_text):
+            dur  = extract_video_duration(request_text)
+            cost = round(dur * 0.05, 2)
+            yield f"data: {json.dumps({'result': f'🎬 Video job submitted ({dur}s, ~${cost}) — this may take a few minutes…', 'tool': 'video_generation'})}\n\n"
+            path, err = generate_video_with_openrouter(request_text, duration=dur)
+            if err:
+                yield f"data: {json.dumps({'error': err})}\n\n"
+            else:
+                video_url    = f"/{path.replace(os.sep, '/')}"
+                video_result = f"✅ {dur}-second draft (~${cost})!\n\n![Generated Video](" + video_url + ")" + _VIDEO_FOLLOWUP_MSG
+                _video_sessions[_vsid] = {"prompt": request_text, "duration": dur, "resolution": "480p"}
+                store_memory(request_text, "video_generation", f"Generated video at {path}")
+                yield f"data: {json.dumps({'result': video_result, 'path': path, 'tool': 'video_generation'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+            return
+
         # ── Image ──────────────────────────────────────────────────────
         if is_image_request(request_text):
             path, err = generate_image_with_openrouter(request_text)
@@ -1146,6 +1546,7 @@ Built-in tools:
 - search: web search. Args: query
 - app_gen: generate script. Args: description, language (python|powershell|bash|batch), filename (optional)
 - clone: clone a website. Args: url
+- video_generation: generate a video from a text prompt. Args: prompt
 - chat: general conversation. Args: message
 
 Plugins:
@@ -1301,6 +1702,25 @@ Style guide: {style_guide}
                         _p = res["path"]
                         _payload = json.dumps({"result": f"App saved to {_p}", "tool": "app_gen", "path": _p, "token_info": ti})
                         yield f"data: {_payload}\n\n"
+
+                # ── video_generation ───────────────────────────────────
+                elif tool == "video_generation":
+                    vid_prompt = args.get("prompt", request_text)
+                    dur        = extract_video_duration(vid_prompt)
+                    cost       = round(dur * 0.05, 2)
+                    yield f"data: {json.dumps({'result': f'🎬 Video job submitted ({dur}s, ~${cost})…', 'tool': 'video_generation'})}\n\n"
+                    path, err = generate_video_with_openrouter(vid_prompt, duration=dur)
+                    if err:
+                        err_flag = True
+                        yield f"data: {json.dumps({'error': err})}\n\n"
+                    else:
+                        video_url    = f"/{path.replace(os.sep, '/')}"
+                        video_result = (f"✅ {dur}-second draft (~${cost})!\n\n"
+                                        f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
+                        _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
+                        store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
+                        _vp = json.dumps({"result": video_result, "path": path, "tool": "video_generation"})
+                        yield f"data: {_vp}\n\n"
 
                 else:
                     err_flag = True

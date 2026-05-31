@@ -215,6 +215,31 @@ body{
 .msg-content pre code{background:none;padding:0}
 .msg-content img{max-width:100%;border-radius:8px;margin-top:8px}
 
+/* ── Image attachment chip (above input) ─────────────────────── */
+#attach-preview{
+  max-width:1100px;margin:0 auto 6px;
+  display:none;align-items:center;gap:8px;
+  padding:6px 10px;
+  background:var(--bg3);border:1px solid var(--border2);border-radius:8px;
+  font-size:12px;color:var(--text);
+}
+#attach-preview.visible{display:flex}
+#attach-thumb{width:36px;height:36px;border-radius:5px;object-fit:cover;flex-shrink:0}
+#attach-label{flex:1;font-family:var(--font-mono);font-size:11px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#attach-remove{background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:16px;padding:0 2px;line-height:1}
+#attach-remove:hover{color:var(--red)}
+#attach-btn{
+  background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);width:52px;height:52px;border-radius:12px;
+  font-size:18px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;flex-shrink:0;
+}
+#attach-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--bg3)}
+#attach-btn.has-image{color:var(--accent);border-color:var(--accent);background:#3b82f622}
+
 /* ── Generated image action buttons ──────────────────────────── */
 .generated-image-wrap{margin-top:8px}
 .img-action-btn{
@@ -676,16 +701,27 @@ body{
 
         <!-- Input -->
         <div id="input-area">
+          <!-- Image attachment preview strip -->
+          <div id="attach-preview">
+            <img id="attach-thumb" src="" alt=""/>
+            <span id="attach-label">No image</span>
+            <button id="attach-remove" onclick="clearAttachment()" title="Remove image">✕</button>
+          </div>
+          <!-- Hidden file picker -->
+          <input type="file" id="attach-file-input" accept="image/*" style="display:none"
+                 onchange="handleAttachFile(this)"/>
           <div id="input-wrap">
             <div class="input-field-wrap">
               <div id="autocomplete-list" style="display:none"></div>
               <textarea id="user-input" placeholder="Message AI Studio… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
             </div>
+            <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()"
+                    title="Attach image for image-to-video">📎</button>
             <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
             <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
             <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
           </div>
-          <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 🎤 voice input</div>
+          <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 📎 attach image &nbsp;·&nbsp; 🎤 voice</div>
         </div>
       </div>
 
@@ -714,7 +750,9 @@ let recognition   = null;
 let currentTool   = 'chat';
 let lastHtml      = '';
 let lastCode      = '';
-let statsInterval = null;
+let statsInterval    = null;
+let attachedImageB64    = null;
+let attachedAspectRatio = '16:9';
 
 // ================================================================
 // Init
@@ -768,6 +806,55 @@ function setupAutoResize() {
   });
 }
 
+// ================================================================
+// Image attachment helpers
+// ================================================================
+function detectAspectRatio(w, h) {
+  if (h > w * 1.2) return '9:16';
+  if (w > h * 1.2) return '16:9';
+  return '1:1';
+}
+
+function isVideoRequest(msg) {
+  const lower = msg.toLowerCase();
+  const kws = ['generate a video','create a video','make a video','make me a video',
+                'generate video','create video','video of','animate','animation'];
+  return kws.some(k => lower.includes(k));
+}
+
+function handleAttachFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    toast('Image too large — please use an image under 8 MB', 'error');
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    attachedImageB64 = reader.result;
+    const img = new Image();
+    img.onload = () => { attachedAspectRatio = detectAspectRatio(img.naturalWidth, img.naturalHeight); };
+    img.src = attachedImageB64;
+    document.getElementById('attach-thumb').src = attachedImageB64;
+    document.getElementById('attach-label').textContent = file.name;
+    document.getElementById('attach-preview').classList.add('visible');
+    document.getElementById('attach-btn').classList.add('has-image');
+    toast(`Image "${file.name}" attached — describe your video`, 'success');
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function clearAttachment() {
+  attachedImageB64    = null;
+  attachedAspectRatio = '16:9';
+  document.getElementById('attach-thumb').src = '';
+  document.getElementById('attach-label').textContent = '';
+  document.getElementById('attach-preview').classList.remove('visible');
+  document.getElementById('attach-btn').classList.remove('has-image');
+}
+
 async function sendMessage() {
   const inp = document.getElementById('user-input');
   const msg = inp.value.trim();
@@ -786,6 +873,36 @@ async function sendMessage() {
   document.getElementById('send-btn').style.opacity = '.4';
 
   const typingId = addTyping();
+
+  // Image-to-video branch: POST to /generate_video
+  if (attachedImageB64 && isVideoRequest(msg)) {
+    const imgB64 = attachedImageB64;
+    const aratio = attachedAspectRatio;
+    clearAttachment();
+    try {
+      const resp = await fetch('/generate_video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: msg, image: imgB64, aspect_ratio: aratio })
+      });
+      const data = await resp.json();
+      removeTyping(typingId);
+      if (data.error) {
+        addMsg('ai', `❌ ${data.error}`);
+      } else {
+        const dur  = data.duration || '?';
+        const cost = data.cost     || '?';
+        const md   = `🎬 **Image-to-video complete** (${dur}s · ~$${cost})\n\n![video](${data.video_url})\n\n💬 **What next?**  · **make it longer** · **try again** · **that's perfect**`;
+        const el   = addMsg('ai', md);
+        chatHistory.push({ role: 'assistant', content: md });
+      }
+    } catch(err) {
+      removeTyping(typingId);
+      addMsg('ai', `❌ Error: ${err.message}`);
+    }
+    doneGenerating(null);
+    return;
+  }
 
   // Smart agent via SSE
   try {
@@ -974,10 +1091,24 @@ function renderMarkdown(text) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    // ── Images: handle both absolute (https://) and relative (/static/) URLs ──
-    // Each image gets a Download button below it
+    // ── Images & Videos: handle both absolute (https://) and relative (/static/) URLs ──
     .replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\)]+)\)/g, (_, alt, url) => {
-      const filename = url.split('/').pop().split('?')[0] || 'image.png';
+      const filename = url.split('/').pop().split('?')[0] || 'media';
+      // Render mp4 as a video player with download button
+      if (/\.mp4(\?|$)/i.test(url)) {
+        return `<div class="generated-image-wrap">
+          <video controls style="max-width:100%;border-radius:8px;margin-top:8px;background:#000">
+            <source src="${url}" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <a href="${url}" download="${filename}" class="img-action-btn">⬇ Download MP4</a>
+            <a href="${url}" target="_blank" class="img-action-btn">🔗 Open</a>
+            <button onclick="copyImageUrl('${url}')" class="img-action-btn">📋 Copy Link</button>
+          </div>
+        </div>`;
+      }
+      // Default: render as image with download button
       return `<div class="generated-image-wrap">
         <img src="${url}" alt="${alt}" style="max-width:100%;border-radius:8px;margin-top:8px"/>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -1448,6 +1579,13 @@ async function renderHealthTool(body) {
             <div style="font-family:var(--font-mono);font-size:11px">${m}</div>
           </div>`).join('')}
       </div>
+      <div style="margin-top:14px">
+        <div class="form-label" style="margin-bottom:8px">Video Model</div>
+        <div class="health-row">
+          <div class="dot green"></div>
+          <div style="font-family:var(--font-mono);font-size:11px">${d.video_model || 'x-ai/grok-imagine-video'}</div>
+        </div>
+      </div>
       <button class="run-btn" style="margin-top:16px" onclick="renderHealthTool(document.getElementById('tool-panel-body'))">🔄 Refresh</button>`;
   } catch(e) {
     body.innerHTML = `<div class="health-row"><div class="dot red"></div><div>❌ Cannot reach server: ${e.message}</div></div>`;
@@ -1606,8 +1744,19 @@ function setupDragDrop() {
       const content = reader.result;
       const inp = document.getElementById('user-input');
       if (file.type.startsWith('image/')) {
-        document.getElementById('ig-prompt') && openTool('image');
-        toast(`Image "${file.name}" ready – open Image Generation panel`, 'success');
+        if (file.size > 8 * 1024 * 1024) {
+          toast('Image too large — please use an image under 8 MB', 'error');
+          return;
+        }
+        attachedImageB64 = content;
+        const _di = new Image();
+        _di.onload = () => { attachedAspectRatio = detectAspectRatio(_di.naturalWidth, _di.naturalHeight); };
+        _di.src = content;
+        document.getElementById('attach-thumb').src = content;
+        document.getElementById('attach-label').textContent = file.name;
+        document.getElementById('attach-preview').classList.add('visible');
+        document.getElementById('attach-btn').classList.add('has-image');
+        toast(`Image "${file.name}" attached — describe your video`, 'success');
       } else {
         inp.value = `Here is the content of ${file.name}:\n\n${content.slice(0,3000)}`;
         toast(`File "${file.name}" loaded into input`, 'success');
