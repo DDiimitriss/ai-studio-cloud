@@ -21,8 +21,8 @@ def run(args):
         return generate_3d(prompt)
 
 def generate_3d(prompt):
-    """Talks to the 3D factory (Using the new Hunyuan3D address)"""
-    url = "https://queue.fal.run/fal-ai/hunyuan3d-1"
+    """Talks to the 3D factory (Using the newest Hunyuan3D-2 address)"""
+    url = "https://queue.fal.run/fal-ai/hunyuan3d-2"
     headers = {"Authorization": f"Key {FAL_KEY}", "Content-Type": "application/json"}
     data = {"prompt": prompt}
 
@@ -31,10 +31,10 @@ def generate_3d(prompt):
         req_data = response.json()
         request_id = req_data.get("request_id")
         if not request_id: 
-            return f" 3D Factory rejected: {req_data}"
+            return f"❌ 3D Factory rejected: {req_data}"
 
-        status_url = f"https://queue.fal.run/fal-ai/hunyuan3d-1/requests/{request_id}/status"
-        result_url = f"https://queue.fal.run/fal-ai/hunyuan3d-1/requests/{request_id}"
+        status_url = f"https://queue.fal.run/fal-ai/hunyuan3d-2/requests/{request_id}/status"
+        result_url = f"https://queue.fal.run/fal-ai/hunyuan3d-2/requests/{request_id}"
         
         while True:
             status_resp = requests.get(status_url, headers=headers).json()
@@ -42,10 +42,14 @@ def generate_3d(prompt):
             if status == "COMPLETED":
                 final = requests.get(result_url, headers=headers).json()
                 # Find the 3D model link in the new response format
-                model_url = final.get("model", {}).get("model_url") or final.get("output", {}).get("model", {}).get("model_url")
-                if not model_url:
-                    model_url = final.get("output", {}).get("model_url")
+                model_url = (final.get("model_mesh_url") or 
+                             final.get("model_url") or 
+                             final.get("output", {}).get("model_mesh_url") or
+                             final.get("output", {}).get("model_url"))
                 
+                if not model_url:
+                    return f"❌ 3D Factory finished, but no model link found. Response: {final}"
+
                 return f"✅ 3D Model Ready! <br><model-viewer src='{model_url}' auto-rotate camera-controls style='width:100%;height:400px;'></model-viewer>"
             elif status == "FAILED": 
                 return "❌ 3D generation failed."
