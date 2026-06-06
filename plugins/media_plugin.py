@@ -5,59 +5,81 @@ import time
 # This grabs the magic key we saved in Railway
 FAL_KEY = os.environ.get("FAL_KEY", "")
 
-def generate_3d(prompt):
-    """The brain that talks to the 3D factory"""
+def run(args):
+    """The main function that the AI Studio calls"""
+    action = args.get("action", "3d").lower()
+    prompt = args.get("prompt", "")
+    
+    if not prompt:
+        return "❌ Error: Missing 'prompt'. Tell me what to create!"
     if not FAL_KEY:
         return "❌ FAL_KEY is missing in Railway variables!"
 
-    # The address of the 3D factory (Tripo3D via Fal.ai)
+    if action == "video":
+        return generate_video(prompt)
+    else:
+        return generate_3d(prompt)
+
+def generate_3d(prompt):
+    """Talks to the 3D factory"""
     url = "https://queue.fal.run/fal-ai/tripo/draftv2"
-    headers = {
-        "Authorization": f"Key {FAL_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Key {FAL_KEY}", "Content-Type": "application/json"}
     data = {"prompt": prompt}
 
     try:
-        # 1. Tell the factory to start building
         response = requests.post(url, json=data, headers=headers)
-        result = response.json()
-        request_id = result.get("request_id")
-        
-        if not request_id:
-            return f"❌ Factory rejected the request: {result}"
+        req_data = response.json()
+        request_id = req_data.get("request_id")
+        if not request_id: 
+            return f"❌ 3D Factory rejected: {req_data}"
 
-        # 2. Wait and check if it's finished
         status_url = f"https://queue.fal.run/fal-ai/tripo/draftv2/requests/{request_id}/status"
         result_url = f"https://queue.fal.run/fal-ai/tripo/draftv2/requests/{request_id}"
         
         while True:
             status_resp = requests.get(status_url, headers=headers).json()
             status = status_resp.get("status")
-            
             if status == "COMPLETED":
-                # It's done! Go get the 3D model link
-                final_result = requests.get(result_url, headers=headers).json()
-                
-                # Find the link to the 3D file
-                model_url = final_result.get("model", {}).get("model_url")
-                if not model_url:
-                    model_url = final_result.get("output", {}).get("model_url")
-                
-                # Send back the special HTML tag that makes it interactive!
+                final = requests.get(result_url, headers=headers).json()
+                model_url = final.get("model", {}).get("model_url") or final.get("output", {}).get("model_url")
                 return f"✅ 3D Model Ready! <br><model-viewer src='{model_url}' auto-rotate camera-controls style='width:100%;height:400px;'></model-viewer>"
-                
-            elif status == "FAILED":
-                return "❌ 3D generation failed at the factory."
-                
-            time.sleep(3) # Wait 3 seconds before checking again
-
+            elif status == "FAILED": 
+                return "❌ 3D generation failed."
+            time.sleep(3)
     except Exception as e:
-        return f"❌ Error talking to factory: {str(e)}"
+        return f"❌ 3D Error: {str(e)}"
+
+def generate_video(prompt):
+    """Talks to the Hollywood Video factory (Minimax/Hailuo)"""
+    url = "https://queue.fal.run/fal-ai/minimax/video-01"
+    headers = {"Authorization": f"Key {FAL_KEY}", "Content-Type": "application/json"}
+    data = {"prompt": prompt}
+
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        req_data = response.json()
+        request_id = req_data.get("request_id")
+        if not request_id: 
+            return f"❌ Video Factory rejected: {req_data}"
+
+        status_url = f"https://queue.fal.run/fal-ai/minimax/video-01/requests/{request_id}/status"
+        result_url = f"https://queue.fal.run/fal-ai/minimax/video-01/requests/{request_id}"
+        
+        while True:
+            status_resp = requests.get(status_url, headers=headers).json()
+            status = status_resp.get("status")
+            if status == "COMPLETED":
+                final = requests.get(result_url, headers=headers).json()
+                video_url = final.get("video", {}).get("url") or final.get("output", {}).get("video", {}).get("url")
+                return f"✅ Hyper-Realistic Video Ready! <br><video src='{video_url}' controls autoplay loop style='width:100%; max-height:500px; border-radius:10px;'></video>"
+            elif status == "FAILED": 
+                return "❌ Video generation failed."
+            time.sleep(5)
+    except Exception as e:
+        return f"❌ Video Error: {str(e)}"
 
 def get_info():
-    # This tells your AI Studio what this plugin does
     return {
-        "name": "3D Model Generator",
-        "description": "Creates an interactive 3D model from text. Arguments: 'prompt' (describe the 3D object)."
+        "name": "God-Tier Media Studio",
+        "description": "Creates interactive 3D models and hyper-realistic videos. Arguments: 'action' (must be '3d' or 'video'), 'prompt' (describe what to make)."
     }
