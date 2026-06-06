@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, print-scale: 100%">
+    <title>Crypto Transaction Offers – Summary Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #e6e9ef;
+            color: #1e2a3a;
+            line-height: 1.45;
+            padding: 2rem 1rem;
+        }
+
+        .report-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            padding: 2rem 2rem 3rem 2rem;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            color: #0b3b5f;
+            border-left: 5px solid #2c7da0;
+            padding-left: 1rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .subhead {
+            color: #2c3e4e;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .date {
+            font-size: 0.85rem;
+            color: #5a6e7c;
+            background: #f1f5f9;
+            padding: 0.3rem 0.8rem;
+            border-radius: 30px;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 3px solid #2c7da0;
+            color: #0f4c5f;
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 1.5rem 0 0.8rem 0;
+            color: #1e4a6e;
+            display: inline-block;
+            background: #eef2ff;
+            padding: 0.2rem 0.8rem;
+            border-radius: 20px;
+        }
+
+        .offer-card {
+            margin-bottom: 2.2rem;
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .offer-title {
+            background: #f8fafc;
+            border-left: 6px solid #2c7da0;
+            padding: 0.6rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 12px 12px 0;
+            font-weight: 700;
+            font-size: 1.3rem;
+            color: #0c4a6e;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0 1.2rem 0;
+            font-size: 0.9rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+
+        th {
+            background-color: #f1f5f9;
+            text-align: left;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            font-weight: 700;
+            width: 28%;
+            color: #0f2c3b;
+        }
+
+        td {
+            border: 1px solid #cbd5e1;
+            padding: 10px 12px;
+            vertical-align: top;
+            background-color: #ffffff;
+        }
+
+        .risk-high {
+            background-color: #fee2e2;
+            border-left: 4px solid #b91c1c;
+            padding: 0.8rem;
+            margin: 0.5rem 0;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .risk-medium {
+            background-color: #ffedd5;
+            border-left: 4px solid #ea580c;
+            padding: 0.8rem;
+            margin: 0.5rem 0;
+            border-radius: 8px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #1e293b;
+            color: white;
+            font-size: 0.7rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+
+        .comparison-matrix {
+            margin-top: 2rem;
+            overflow-x: auto;
+        }
+
+        .comparison-matrix table {
+            font-size: 0.85rem;
+        }
+
+        .footer-note {
+            margin-top: 2.5rem;
+            padding-top: 1rem;
+            border-top: 1px dashed #cbd5e1;
+            font-size: 0.75rem;
+            color: #5b6e8c;
+            text-align: center;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+                margin: 0;
+            }
+            .report-container {
+                box-shadow: none;
+                padding: 0.5rem;
+                max-width: 100%;
+            }
+            .risk-high, .risk-medium {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+            h2, h3 {
+                page-break-after: avoid;
+            }
+            table {
+                break-inside: avoid;
+            }
+            .offer-card {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+        }
+
+        .discount-note {
+            font-family: monospace;
+            background: #fef9e3;
+            padding: 0.1rem 0.3rem;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="report-container">
+    <h1>CRYPTO TRANSACTION OFFERS</h1>
+    <div class="subhead">
+        <span>Arranged by Offer Type – Summary Report</span>
+        <span class="date">Prepared: May 2026</span>
+    </div>
+
+    <!-- ======================= OFFER 1 ======================= -->
+    <div class="offer-card">
+        <div class="offer-title">📄 OFFER 1 – BTC / USDT ESCROW (FRANCE, 10/6 DISCOUNT)</div>
+        <p><strong>Source:</strong> 21.05.2026 procedure escrow.docx + note "Escrow BTC deal 10/6"</p>
+        <table>
+            <tr><th>Offer type</th><td>BTC ↔ USDT exchange via attorneys</td></tr>
+            <tr><th>Discount</th><td>10/6 (needs definition – 10% for buyer? 6% seller?) <span class="discount-note">unclear fraction</span></td></tr>
+            <tr><th>Tranche size</th><td>Minimum 1000 BTC per tranche</td></tr>
+            <tr><th>Total volume</th><td>Not stated (notes conflict: 150k or 50k BTC)</td></tr>
+            <tr><th>Who moves first</th><td>Seller's attorney transfers BTC into own wallet first</td></tr>
+            <tr><th>Simplified procedure</th><td>1. Sign SPA + endorse<br>2. WhatsApp video call<br>3. Seller attorney: BTC to own wallet (1h)<br>4. Buyer attorney: USDT to buyer wallet (1h)<br>5. Buyer attorney sends USDT to seller (30min)<br>6. Seller attorney sends BTC to buyer (30min)<br>7. Repeat tranche<br>8. Pay commissions before next tranche</td></tr>
+            <tr><th>Commissions</th><td>10% gross → 5% net to buyer, 2.5% sell side, 2.5% buy side</td></tr>
+            <tr><th>Buyer requirement</th><td>USDT wallet with minimum 20M USDT balance</td></tr>
+            <tr><th>Missing / unclear</th><td>Escrow agent name, attorney identities, wallet addresses, exact discount meaning</td></tr>
+        </table>
+        <div class="risk-medium">⚠️ Risk note: Seller's attorney sends BTC only to own wallet first – unusual and offers no buyer protection until step 6.</div>
+    </div>
+
+    <!-- ======================= OFFER 2 ======================= -->
+    <div class="offer-card">
+        <div class="offer-title">⚠️ OFFER 2 – AB TEST PROCEDURE (SELLER SENDS BTC FIRST)</div>
+        <p><strong>Source:</strong> Photo notes + later text (Jimmy’s wallet, 7/4 discount)</p>
+        <table>
+            <tr><th>Offer type</th><td>BTC → USDT (seller sends BTC first after AB test)</td></tr>
+            <tr><th>Discount</th><td>7/4, 8/4, or 9/5 – multiple versions (undefined fraction)</td></tr>
+            <tr><th>Minimum buyer wallet</th><td>$20M USDT private wallet</td></tr>
+            <tr><th>Who moves first</th><td>Buyer sends $500 deposit + small USDT test transaction (10 or 11 USDT)</td></tr>
+            <tr><th>Simplified procedure</th><td>1. Buyer provides A wallet ($5M min) + clean B wallet + CIS + $500 deposit<br>2. Seller provides CIS<br>3. Buyer performs AB test with seller's code, sends screenshots<br>4. Invoice signed<br>5. Seller sends Satoshi then first BTC tranche<br>6. Buyer pays USDT<br>7. Commissions paid<br>8. Repeat</td></tr>
+            <tr><th>AB test details</th><td>Send 10 USDT (≥100M deal) or 11 USDT (<100M). Requires: before/after dashboard, tx hash, success screenshot, history.</td></tr>
+            <tr><th>Commissions</th><td>Not specified in this offer</td></tr>
+            <tr><th>Critical missing</th><td>No escrow, no attorney, no SPA referenced</td></tr>
+        </table>
+        <div class="risk-high">🚨 HIGH RISK: AB test with real USDT transfer before any BTC is a known scam pattern. $500 deposit is non‑standard and exposes buyer to loss.</div>
+    </div>
+
+    <!-- ======================= OFFER 3 ======================= -->
+    <div class="offer-card">
+        <div class="offer-title">💱 OFFER 3 – FIAT TO USDT PURCHASE (DUBAI, BANK TRANSFER)</div>
+        <p><strong>Source:</strong> Notes after "USDT (TRC20) 5/3 Dubai" and "Fiat to usdt purchase 6/3"</p>
+        <table>
+            <tr><th>Offer type</th><td>Fiat (bank wire) → USDT</td></tr>
+            <tr><th>Discount</th><td>Volume‑based: up to $1B: 6/3 &nbsp;|&nbsp; $1B–$5B: 7/4 &nbsp;|&nbsp; $5B+: 8/4 (also mentions 5/3 unclear)</td></tr>
+            <tr><th>Maximum volume</th><td>$40B USDT (unverified claim)</td></tr>
+            <tr><th>Seller location</th><td>Dubai</td></tr>
+            <tr><th>Receiving bank</th><td>Chase USA or EIB Sharjah Bank</td></tr>
+            <tr><th>Who moves first</th><td>Buyer sends fiat wire</td></tr>
+            <tr><th>Simplified procedure</th><td>1. Buyer sends CIS + LOI<br>2. Sign SPA + NCNDA<br>3. Buyer sends wire receipt<br>4. Funds clear in seller's account<br>5. Seller sends USDT at agreed discount<br>6. Buyer signs Form of Receipt<br>7. Intermediaries paid by buyer from discount</td></tr>
+            <tr><th>Alternative procedure</th><td>1. Buyer CIS + USDT wallet<br>2. Seller issues invoice<br>3. Buyer pays 1st tranche fiat<br>4. Seller sends USDT<br>5. Repeat</td></tr>
+            <tr><th>Commissions</th><td>Not specified (paid from discount)</td></tr>
+            <tr><th>Missing info</th><td>No escrow, no licensed USDT provider verified</td></tr>
+        </table>
+        <div class="risk-high">⚠️ Risk note: Buyer sends fiat first with no crypto collateral – 100% counterparty risk on buyer until seller releases USDT.</div>
+    </div>
+
+    <!-- ======================= OFFER 4 ======================= -->
+    <div class="offer-card">
+        <div class="offer-title">📑 OFFER 4 – USDT FOR FIAT (MOU – NO BTC)</div>
+        <p><strong>Source:</strong> USDT-FIAT MEMORANDUM OF UNDERSTANDING (MOU) K.docx</p>
+        <table>
+            <tr><th>Offer type</th><td>USDT → Fiat (crypto to bank wire)</td></tr>
+            <tr><th>Total volume</th><td>Up to 5,000,000,000 USDT (5B)</td></tr>
+            <tr><th>Commission</th><td>3% total: 1.5% seller mandate + 1.5% buyer mandate</td></tr>
+            <tr><th>Who moves first</th><td>Buyer sends fiat payment</td></tr>
+            <tr><th>Simplified procedure</th><td>1. Share wallets + sign MOU<br>2. Seller issues invoice per tranche<br>3. Buyer sends fiat<br>4. Seller releases USDT to buyer's wallet<br>5. Seller pays commissions to paymaster</td></tr>
+            <tr><th>Tranche 1</th><td>20,000,000 USDT (subsequent tranches blank)</td></tr>
+            <tr><th>Dispute resolution</th><td>"laws of British for digital trading disputes" → <strong>INVALID</strong> (no such law exists)</td></tr>
+            <tr><th>Draft errors</th><td>Both parties labeled "SELLER"; no wallet or bank details filled in</td></tr>
+            <tr><th>Missing</th><td>No escrow, no attorney, no signatures, no passport attachments</td></tr>
+        </table>
+        <div class="risk-high">⚖️ Risk note: Legally unenforceable. Buyer has no protection after sending fiat. MOU contains contradictory party definitions.</div>
+    </div>
+
+    <!-- ======================= COMPARISON MATRIX ======================= -->
+    <h2>📊 COMPARISON MATRIX OF ALL OFFERS</h2>
+    <div class="comparison-matrix">
+        <table>
+            <thead>
+                <tr><th>Offer</th><th>Type</th><th>Who moves first</th><th>Key missing item</th><th>Risk level</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>1 – Escrow</strong></td><td>BTC ↔ USDT via attorneys</td><td>Seller attorney (BTC to own wallet first)</td><td>Escrow agent identity</td><td>Medium</td></tr>
+                <tr style="background:#fff0f0;"><td><strong>2 – AB Test</strong></td><td>BTC → USDT</td><td>Buyer ($500 deposit + test USDT)</td><td>No escrow, no SPA</td><td><strong>VERY HIGH (scam pattern)</strong></td></tr>
+                <tr><td><strong>3 – Fiat→USDT</strong></td><td>Fiat → USDT</td><td>Buyer (fiat wire first)</td><td>No crypto collateral</td><td>High</td></tr>
+                <tr><td><strong>4 – MOU</strong></td><td>USDT → Fiat</td><td>Buyer (fiat first)</td><td>Invalid legal clause, no signatures</td><td>High (unenforceable)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Additional notes -->
+    <h3>⚠️ Important disclaimer</h3>
+    <p style="background:#f8fafc; padding: 1rem; border-radius: 12px; margin-top: 0.5rem;">
+        This document arranges information as provided in the source materials. No offer has been validated for counterparty existence, asset ownership, or legal enforceability.<br>
+        <strong>Before any transaction:</strong> verify identities, use a qualified neutral escrow agent (licensed), and obtain independent legal advice. The AB test procedure (Offer 2) contains classic red flags of crypto advance‑fee fraud.
+    </p>
+
+    <div class="footer-note">
+        Crypto Transaction Offers – Arranged by Type | Not financial or legal advice<br>
+        Generated for internal presentation &nbsp;|&nbsp; Page can be printed as PDF (Ctrl+P → Save as PDF)
+    </div>
+</div>
+</body>
+</html>

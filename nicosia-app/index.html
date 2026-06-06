@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Nicosia Café & Restaurant Guide</title>
+<!-- Social share preview -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://cheers-app1.netlify.app/">
+<meta property="og:title" content="Cheers! · Eat · Drink · Cyprus — Nicosia Food Guide">
+<meta property="og:description" content="Discover Nicosia's best cafés and restaurants. The freshest trilingual guide to where the capital eats and drinks — find great places and connect with each one directly.">
+<meta property="og:image" content="https://i.postimg.cc/RVHLjYRc/cheers-square.png">
+<meta property="og:image:secure_url" content="https://i.postimg.cc/RVHLjYRc/cheers-square.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1080">
+<meta property="og:image:height" content="1080">
+<meta property="og:image:alt" content="Cheers! Eat Drink Cyprus">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cheers! · Eat · Drink · Cyprus — Nicosia Food Guide">
+<meta name="twitter:description" content="Discover Nicosia's best cafés and restaurants. The freshest trilingual guide to where the capital eats and drinks — find great places and connect with each one directly.">
+<meta name="twitter:image" content="https://i.postimg.cc/RVHLjYRc/cheers-square.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pacifico&display=swap" rel="stylesheet"/>
+<style>
+  /* ═══ THEME TOKENS ═══ */
+  :root{
+    --grad:linear-gradient(135deg,#7c3aed 0%,#db2777 55%,#f97316 100%);
+    --grad-b:linear-gradient(135deg,#0ea5e9 0%,#7c3aed 55%,#db2777 100%);
+    --accent:#db2777;
+    --accent-2:#7c3aed;
+    --accent-3:#f97316;
+    --cream:#f0f0f2;
+    --r:10px;--r-sm:8px;
+    /* ── DARK theme (default) ── */
+    --bg:#2a2c32;--card-bg:#34363d;
+    --border:#43454d;
+    --ink:#e8e9ec;--ink-deep:#e8e9ec;
+    --ink-muted:#8b8d98;--desc-color:rgba(139,141,152,.9);
+    --topbar-bg:rgba(42,44,50,.96);
+    --lang-bg:rgba(255,255,255,.06);
+    --lang-color:#8b8d98;
+    --hero-text:#e8e9ec;--hero-sub:#8b8d98;
+    --hero-glow-a:rgba(124,58,237,.22);
+    --hero-glow-b:rgba(219,39,119,.16);
+    --hero-glow-c:rgba(249,115,22,.10);
+    --search-bg:#34363d;--search-color:#e8e9ec;
+    --cats-bg:#34363d;--cats-ring:#43454d;
+    --cat-inactive:#8b8d98;
+    --chip-bg:#34363d;--chip-border:#43454d;
+    --owner-a:#1e2026;--owner-b:#262830;--owner-c:#1a1c22;
+    --footer-bg:#1a1c22;
+    --shadow:0 6px 24px rgba(0,0,0,.38);
+    --shadow-sm:0 1px 4px rgba(0,0,0,.2);
+    --noise-blend:screen;--noise-op:.07
+  }
+  /* ── LIGHT theme ── */
+  html.light{
+    --bg:#f5f5f6;--card-bg:#ffffff;
+    --border:#e4e4e7;
+    --ink:#18181b;--ink-deep:#18181b;
+    --ink-muted:#71717a;--desc-color:rgba(113,113,122,.9);
+    --topbar-bg:rgba(245,245,246,.96);
+    --lang-bg:rgba(24,24,27,.06);
+    --lang-color:#71717a;
+    --hero-text:#18181b;--hero-sub:#71717a;
+    --hero-glow-a:rgba(124,58,237,.12);
+    --hero-glow-b:rgba(219,39,119,.09);
+    --hero-glow-c:rgba(249,115,22,.06);
+    --search-bg:#ffffff;--search-color:#18181b;
+    --cats-bg:#ffffff;--cats-ring:#e4e4e7;
+    --cat-inactive:#71717a;
+    --chip-bg:#ffffff;--chip-border:#e4e4e7;
+    --owner-a:#18181b;--owner-b:#27272a;--owner-c:#09090b;
+    --footer-bg:#18181b;
+    --shadow:0 4px 16px rgba(0,0,0,.08);
+    --shadow-sm:0 1px 3px rgba(0,0,0,.05);
+    --noise-blend:multiply;--noise-op:.12
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);overflow-x:hidden;transition:background .3s,color .3s}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opacity:var(--noise-op);mix-blend-mode:var(--noise-blend);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E")}
+
+  /* ── TOPBAR ── */
+  .topbar{position:sticky;top:0;z-index:50;background:var(--topbar-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:12px 24px;gap:12px;flex-wrap:wrap;transition:background .3s,border-color .3s}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.15) 0%,transparent 55%),var(--grad);display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative;overflow:hidden;box-shadow:0 0 0 1.5px rgba(124,58,237,.5),0 2px 10px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.35)}
+  .brand .mark::before{content:'';position:absolute;inset:3px;border-radius:8px;border:1px solid rgba(255,255,255,.28);pointer-events:none;z-index:1}
+  .brand .mark::after{content:'';position:absolute;top:0;left:0;right:0;height:52%;border-radius:10px 10px 0 0;background:linear-gradient(180deg,rgba(255,255,255,.22) 0%,transparent 100%);pointer-events:none;z-index:3}
+  .mark-script{font-family:'Pacifico',cursive;font-size:8.5px;color:rgba(255,255,255,.96);position:relative;z-index:4;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.5);line-height:1;margin-top:1px}
+  .mark-bubble{position:absolute;border-radius:50%;background:rgba(255,255,255,.55);z-index:2;animation:mark-bubble 2.2s ease-in infinite}
+  .mark-bubble.b1{width:3px;height:3px;left:8px;bottom:5px;animation-delay:0s}
+  .mark-bubble.b2{width:2px;height:2px;left:19px;bottom:7px;animation-delay:.8s}
+  .mark-bubble.b3{width:2.5px;height:2.5px;right:9px;bottom:4px;animation-delay:1.5s}
+  @keyframes mark-bubble{0%{transform:translateY(0);opacity:.7}80%{opacity:.3}100%{transform:translateY(-30px);opacity:0}}
+  .mark-spark{position:absolute;color:rgba(255,255,255,.85);z-index:4;font-size:6px;line-height:1;pointer-events:none;animation:mark-spark 2.8s ease infinite}
+  .mark-spark.s1{top:5px;right:6px;animation-delay:0s}
+  .mark-spark.s2{top:15px;left:5px;font-size:5px;animation-delay:1.4s}
+  @keyframes mark-spark{0%,100%{opacity:.85;transform:scale(1) rotate(0deg)}50%{opacity:.1;transform:scale(.5) rotate(15deg)}}
+  .brand .name{font-weight:800;font-size:15px;letter-spacing:-.4px;color:var(--ink-deep);transition:color .3s}
+  .brand .name small{display:block;font-weight:500;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-muted);margin-top:1px;transition:color .3s}
+  .langs{display:flex;gap:2px;background:var(--lang-bg);border-radius:8px;padding:3px;transition:background .3s}
+  .lang{border:none;background:none;cursor:pointer;font-family:inherit;font-weight:600;font-size:12px;padding:6px 12px;border-radius:6px;color:var(--lang-color);transition:filter .2s,color .25s,transform .12s;min-height:34px;display:inline-flex;align-items:center}
+  .lang.active{background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff}
+  .lang:not(.active):hover{color:var(--accent)}
+  .lang:active{transform:scale(0.95)}
+  .theme-btn{border:none;background:var(--lang-bg);width:34px;height:34px;border-radius:8px;font-size:15px;cursor:pointer;transition:background .25s,transform .12s;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink-deep)}
+  .theme-btn:hover{background:var(--chip-bg)}
+  .theme-btn:active{transform:scale(0.92)}
+
+  /* ── HERO — vibrant multi-colour aurora ── */
+  .hero{position:relative;z-index:2;background:var(--bg);padding:40px 24px 0;text-align:center;transition:background .3s}
+  .hero-img-wrap{position:relative;width:calc(100% - 48px);max-width:1120px;margin:0 auto 44px;border-radius:10px;overflow:hidden;height:320px;z-index:0}
+  .hero-img-wrap img{width:100%;height:100%;object-fit:cover;display:block;opacity:.72;filter:saturate(.82)}
+  .hero-img-wrap::before{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,var(--bg) 0%,transparent 22%,transparent 92%,var(--bg) 100%);z-index:1;pointer-events:none;transition:background .3s}
+  .hero-img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(to right,var(--bg) 0%,transparent 8%,transparent 92%,var(--bg) 100%);z-index:1;pointer-events:none;transition:background .3s}
+  .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 55% 50% at 25% 0%,var(--hero-glow-a) 0%,transparent 65%),radial-gradient(ellipse 55% 45% at 75% 0%,var(--hero-glow-b) 0%,transparent 60%),radial-gradient(ellipse 40% 30% at 50% 15%,var(--hero-glow-c) 0%,transparent 55%),linear-gradient(180deg,rgba(0,0,0,.08) 0%,transparent 100%);pointer-events:none;z-index:0}
+  .hero::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(124,58,237,.55) 25%,rgba(219,39,119,.55) 50%,rgba(249,115,22,.45) 75%,transparent);pointer-events:none;z-index:2}
+  .hero-inner{max-width:900px;margin:0 auto;position:relative;z-index:1}
+  .hero .eyebrow{display:inline-block;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;font-size:11px;color:var(--ink-muted);margin-bottom:20px;transition:color .3s}
+  .hero h1{font-weight:800;font-size:clamp(32px,5vw,52px);line-height:1.1;letter-spacing:-1.5px;margin-bottom:16px;color:var(--hero-text);transition:color .3s}
+  .hero h1 em{font-style:normal;background:linear-gradient(135deg,#f97316,#db2777,#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .hero p{font-size:15px;line-height:1.7;color:var(--hero-sub);max-width:440px;margin:0 auto 32px;transition:color .3s}
+  .hero .search{display:flex;max-width:440px;margin:0 auto;background:var(--search-bg);border-radius:8px;padding:4px;border:1px solid var(--border);align-items:center;transition:background .3s,border-color .25s,box-shadow .25s}
+  .hero .search:focus-within{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.18)}
+  .hero .search input{flex:1;border:none;background:none;outline:none;font-family:inherit;font-size:14px;color:var(--search-color);padding:8px 12px;transition:color .3s}
+  .hero .search button{background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff;border:none;cursor:pointer;padding:9px 18px;border-radius:6px;font-weight:700;font-size:13px;font-family:inherit;transition:filter .2s,transform .12s;flex-shrink:0}
+  .hero .search button:hover{filter:brightness(1.12)}
+  .hero .search button:active{filter:brightness(.82);transform:scale(0.98)}
+
+  @media(min-width:960px){.hero h1{white-space:nowrap}.hero h1 br{display:none}}
+
+  /* ── CATEGORY TOGGLE ── */
+  .cats{display:flex;justify-content:center;margin:32px auto 0;background:var(--cats-bg);border-radius:8px;padding:4px;border:1px solid var(--cats-ring);width:fit-content;position:relative;z-index:2;transition:background .3s,border-color .3s}
+  .cat{padding:9px 26px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;transition:filter .2s,color .25s,transform .12s;border:none;background:none;color:var(--cat-inactive);font-family:inherit;min-height:38px;display:inline-flex;align-items:center}
+  .cat.active{background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff}
+  .cat:not(.active):hover{color:var(--accent)}
+  .cat:active{transform:scale(0.97)}
+
+  /* ── FILTER CHIPS ── */
+  .filters{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;padding:28px 24px 8px;position:relative;z-index:2}
+  #typeFilters{padding:6px 24px 32px}
+  .chip{background:var(--chip-bg);border:1px solid var(--chip-border);padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:500;font-size:13px;min-height:34px;display:inline-flex;align-items:center;color:var(--ink-muted);font-family:inherit;transition:background .2s,color .2s,border-color .2s,transform .12s,box-shadow .2s}
+  .chip:hover{background:linear-gradient(135deg,rgba(124,58,237,.12),rgba(219,39,119,.09),rgba(249,115,22,.06));border-color:rgba(124,58,237,.4);color:var(--ink)}
+  .chip:active{transform:scale(0.96);opacity:.88}
+  .chip.active{background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff;border-color:transparent}
+  .chip.type-active{background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad-b);color:#ffffff;border-color:transparent}
+
+  /* ── GRID ── */
+  .grid-wrap{max-width:1120px;margin:0 auto;padding:24px 24px 80px;position:relative;z-index:2}
+  .grid-title{font-weight:800;font-size:22px;margin-bottom:4px;letter-spacing:-.5px;color:var(--ink-deep);transition:color .3s}
+  .grid-sub{color:var(--ink-muted);margin-bottom:24px;font-size:13px;transition:color .3s}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+
+  /* ── CARD ── */
+  .place{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:transform .2s ease,box-shadow .2s ease,background .3s,border-color .3s;display:flex;flex-direction:column;opacity:0;transform:translateY(12px);animation:rise .35s ease forwards;box-shadow:inset 0 1px 0 rgba(255,255,255,.055)}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .place:hover{transform:translateY(-3px);box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.055),0 0 0 1px rgba(124,58,237,.22)}
+  .place .photo{height:180px;position:relative;overflow:hidden;display:flex;align-items:flex-end;padding:12px}
+  .place .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;transition:transform .4s ease}
+  .place:hover .photo img{transform:scale(1.03)}
+  .place .photo::before{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55) 0%,transparent 52%);z-index:1}
+  .place .photo .tag{position:relative;background:rgba(255,255,255,.9);padding:3px 9px;border-radius:4px;font-size:11px;font-weight:600;color:#18181b;z-index:2}
+  .place .photo .rating{position:absolute;top:12px;right:12px;background:var(--accent);color:#ffffff;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;z-index:2}
+  .place .photo-emoji{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:52px;opacity:.75;z-index:2}
+  .place .photo.has-img .photo-emoji{display:none}
+  .feat-badge{position:absolute;top:12px;left:12px;background:var(--grad);color:#ffffff;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;z-index:2}
+  .place .body{padding:16px 18px 18px;flex:1;display:flex;flex-direction:column}
+  .place h3{font-weight:700;font-size:16px;margin-bottom:3px;line-height:1.2;color:var(--ink-deep);transition:color .3s}
+  .place .area{color:var(--accent);font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px}
+  .place .desc{color:var(--desc-color);font-size:13px;line-height:1.6;margin-bottom:14px;flex:1;transition:color .3s}
+  .visit{display:block;text-align:center;text-decoration:none;background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff;padding:10px;border-radius:var(--r-sm);font-weight:700;font-size:13px;font-family:inherit;transition:filter .2s,transform .12s}
+  .visit:hover{filter:brightness(1.12)}
+  .visit:active{filter:brightness(.82);transform:scale(0.98)}
+  .visit.none{background:transparent;color:var(--ink-muted);border:1px solid var(--border);font-size:13px;font-weight:500;transition:border-color .25s,color .25s,transform .12s}
+  .visit.none:hover{border-color:#7c3aed;color:#7c3aed;background:transparent}
+  .visit.none:active{transform:scale(0.98);opacity:.8}
+  .confirm{font-size:11px;color:var(--ink-muted);opacity:.6;font-weight:500;margin-top:7px;text-align:center;transition:color .3s}
+
+  /* ── COLOUR FALLBACKS ── */
+  .p1{background:linear-gradient(135deg,#c8923d,#2a2b32)}.p2{background:linear-gradient(135deg,#3d3f4c,#2a2b32)}.p3{background:linear-gradient(135deg,#c8923d,#1c1d22)}.p4{background:linear-gradient(135deg,#505260,#1c1d22)}.p5{background:linear-gradient(135deg,#6b6d7a,#2a2b32)}.p6{background:linear-gradient(135deg,#3d3f4c,#1c1d22)}.p7{background:linear-gradient(135deg,#7c3aed,#db2777)}.p8{background:linear-gradient(135deg,#1c1d22,#3d3f4c)}
+
+  /* ── OWNER BANNER ── */
+  .owner{max-width:1120px;margin:0 auto 80px;padding:0 24px;position:relative;z-index:2}
+  .owner-inner{background:linear-gradient(135deg,var(--owner-a),var(--owner-b) 52%,var(--owner-c));border-radius:12px;padding:48px 40px;text-align:center;color:var(--cream);position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.05);transition:background .3s}
+  .owner-inner::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 65% -10%,rgba(124,58,237,.16) 0%,transparent 55%),radial-gradient(ellipse at 35% 110%,rgba(219,39,119,.1) 0%,transparent 50%);pointer-events:none}
+  .owner-inner h2{font-weight:800;font-size:clamp(20px,2.8vw,32px);margin-bottom:10px;position:relative;letter-spacing:-.5px}
+  .owner-inner p{font-size:14px;opacity:.72;max-width:480px;margin:0 auto 22px;position:relative;line-height:1.65}
+  .owner-inner .btn{display:inline-block;background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%),var(--grad);color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;font-family:inherit;position:relative;transition:filter .2s,transform .12s;cursor:pointer;border:none}
+  .owner-inner .btn:hover{filter:brightness(1.12)}
+  .owner-inner .btn:active{filter:brightness(.82);transform:scale(0.98)}
+
+  /* ── FOOTER ── */
+  footer{background:var(--footer-bg);color:rgba(240,240,242,.42);padding:40px 24px;text-align:center;position:relative;z-index:2;transition:background .3s}
+  footer .fbrand{font-weight:800;font-size:15px;color:var(--cream);margin-bottom:8px;letter-spacing:-.2px}
+  footer p{font-size:13px;line-height:1.7}
+  footer .small{font-size:11px;opacity:.4;margin-top:10px}
+
+  /* ── MOBILE ── */
+  /* ── PAGE ENTRANCE ── */
+  @keyframes page-fadein{from{opacity:0}to{opacity:1}}
+  body{animation:page-fadein .6s ease both}
+  .reveal{opacity:0;transform:translateY(20px);transition:opacity .55s ease,transform .55s ease}
+  .reveal.in{opacity:1;transform:translateY(0)}
+  .hero-inner.reveal{transition-delay:.1s}
+  .hero-img-wrap.reveal{transition-delay:.25s}
+  @media(prefers-reduced-motion:reduce){
+    body,body.loaded{opacity:1!important;transition:none!important}
+    .reveal,.reveal.in{opacity:1!important;transform:none!important;transition:none!important}
+    .mark-bubble,.mark-spark{animation:none!important}
+  }
+
+  @media(max-width:600px){
+    .topbar{padding:10px 14px;gap:8px}
+    .brand .mark{width:36px;height:36px;border-radius:8px}
+    .brand .name{font-size:14px}
+    .lang{padding:6px 10px;font-size:12px;min-height:34px}
+    .theme-btn{width:32px;height:32px;font-size:14px}
+    .hero{padding:32px 16px 0}
+    .hero h1{white-space:normal}
+    .hero h1 br{display:initial}
+    .hero-img-wrap{height:200px;width:calc(100% - 32px);margin:0 auto 32px;border-radius:8px}
+    .hero .search button{padding:9px 14px;font-size:12px}
+    .cats{width:calc(100% - 28px);margin:22px 14px 0}
+    .cat{flex:1;padding:9px 8px;font-size:13px;min-height:38px;justify-content:center}
+    .filters,#typeFilters{padding:14px 12px;gap:6px}
+    #typeFilters{padding-top:4px;padding-bottom:22px}
+    .chip{padding:6px 12px;font-size:12px;min-height:34px}
+    .grid{grid-template-columns:1fr}
+    .grid-wrap{padding:14px 12px 52px}
+    .grid-title{font-size:18px}
+    .owner-inner{padding:32px 20px}
+    .owner-inner p{font-size:13px}
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark"><span class="mark-bubble b1"></span><span class="mark-bubble b2"></span><span class="mark-bubble b3"></span><span class="mark-script">Cheers!</span><span class="mark-spark s1">✦</span><span class="mark-spark s2">✦</span></div>
+      <div class="name">Cheers!<small>Eat · Drink · Cyprus</small></div>
+    </div>
+    <div class="langs" id="langs">
+      <button class="lang active" data-lang="el">🇬🇷 ΕΛ</button>
+      <button class="lang" data-lang="en">🇬🇧 EN</button>
+      <button class="lang" data-lang="ru">🇷🇺 RU</button>
+    </div>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">🌙</button>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner reveal">
+      <span class="eyebrow" id="eyebrow"></span>
+      <h1 id="heroTitle"></h1>
+      <p id="heroText"></p>
+      <div class="search">
+        <input type="text" id="search"/>
+        <button id="searchBtn" onclick="doSearch()"></button>
+      </div>
+      <div class="cats" id="cats">
+        <button class="cat active" data-cat="cafe" id="catCafe"></button>
+        <button class="cat" data-cat="restaurant" id="catRest"></button>
+      </div>
+    </div>
+    <div class="hero-img-wrap reveal">
+      <img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=1400&q=85&auto=format&fit=crop" alt="Beautiful Mediterranean food spread" loading="lazy" onerror="this.parentNode.style.display='none'"/>
+    </div>
+  </section>
+
+  <div class="filters" id="filters"></div>
+  <div class="filters" id="typeFilters"></div>
+
+  <section class="grid-wrap" id="list">
+    <h2 class="grid-title" id="gridTitle"></h2>
+    <p class="grid-sub" id="count"></p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="owner reveal" id="owner">
+    <div class="owner-inner">
+      <h2 id="ownerTitle"></h2>
+      <p id="ownerText"></p>
+      <a class="btn" id="ownerBtn" onclick="ownerClick()"></a>
+    </div>
+  </section>
+
+  <footer class="reveal" id="about">
+    <div class="fbrand" id="footBrand"></div>
+    <p id="footText"></p>
+    <p class="small" id="footSmall"></p>
+  </footer>
+
+<script>
+  const T={
+    el:{brand:"Καλή Όρεξη Λευκωσία",brandSub:"Φαγητό & Καφές",eyebrow:"🇨🇾 Λευκωσία · Nicosia",
+      title:'Πού τρώει &amp; πίνει <br><em>η Λευκωσία</em>',
+      text:"Ο πιο φρέσκος οδηγός για καφετέριες και εστιατόρια της πρωτεύουσας. Ανακαλύψτε υπέροχα μέρη και συνδεθείτε απευθείας με το καθένα.",
+      searchPh:"Αναζήτηση με όνομα ή περιοχή…",searchBtn:"Αναζήτηση",catCafe:"☕ Καφετέριες",catRest:"🍽️ Εστιατόρια",allAreas:"Όλες οι περιοχές",allTypes:"Όλοι οι τύποι",featured:"★ Προτεινόμενο",
+      gridCafe:"Καφετέριες στη Λευκωσία",gridRest:"Εστιατόρια στη Λευκωσία",countCafe:"καφετέριες",countRest:"εστιατόρια",countOne_cafe:"καφετέρια",countOne_rest:"εστιατόριο",inArea:"στην περιοχή",
+      visit:"Δείτε ιστοσελίδα →",noWeb:"Δεν έχει ιστοσελίδα — αποκτήστε →",confirm:"ⓘ Στοιχεία προς επιβεβαίωση",
+      ownerTitle:"Έχετε καφετέρια ή εστιατόριο στη Λευκωσία;",
+      ownerText:"Είστε ήδη καταχωρημένοι εδώ δωρεάν. Θέλετε ενημέρωση στοιχείων, μια όμορφη ιστοσελίδα με online παραγγελίες, ή βοήθεια με τη διαφήμισή σας; Αυτό κάνουμε — ας μιλήσουμε.",
+      ownerBtn:"Διεκδικήστε την καταχώρισή σας — Δωρεάν",
+      footText:"Ο μοντέρνος οδηγός για φαγητό & ποτό στη Λευκωσία.<br>Ανακαλύψτε τοπικά στολίδια · Στηρίξτε τις κυπριακές επιχειρήσεις.",
+      footSmall:"Επίδειξη καταλόγου · Ορισμένα στοιχεία είναι προσωρινά, προς επιβεβαίωση με κάθε επιχείρηση · Λευκωσία, Κύπρος · 2026",
+      alert:"Εδώ θα μπει ο σύνδεσμος WhatsApp ή η φόρμα επικοινωνίας σας!"},
+    en:{brand:"Bon Appétit Nicosia",brandSub:"Eat & Drink",eyebrow:"🇨🇾 Nicosia · Λευκωσία",
+      title:'Where Nicosia <br><em>eats &amp; drinks</em>',
+      text:"The freshest guide to the capital's cafés and restaurants. Discover great spots and tap straight through to each one.",
+      searchPh:"Search by name or area…",searchBtn:"Search",catCafe:"☕ Cafés",catRest:"🍽️ Restaurants",allAreas:"All Areas",allTypes:"All Types",featured:"★ Featured",
+      gridCafe:"Cafés in Nicosia",gridRest:"Restaurants in Nicosia",countCafe:"cafés",countRest:"restaurants",countOne_cafe:"café",countOne_rest:"restaurant",inArea:"in",
+      visit:"Visit Website →",noWeb:"No website yet — get one →",confirm:"ⓘ Details to be confirmed",
+      ownerTitle:"Own a café or restaurant in Nicosia?",
+      ownerText:"You're already listed here for free. Want your details updated, a beautiful website with online ordering, or help with your advertising? That's what we do — let's talk.",
+      ownerBtn:"Claim Your Listing — Free",
+      footText:"The modern guide to eating & drinking in Nicosia.<br>Discover local gems · Support Cypriot business.",
+      footSmall:"Demo directory · Some details are placeholders to be confirmed with each business · Nicosia, Cyprus · 2026",
+      alert:"This is where your WhatsApp or contact form link goes!"},
+    ru:{brand:"Приятного аппетита Никосия",brandSub:"Еда и кофе",eyebrow:"🇨🇾 Никосия · Λευκωσία",
+      title:'Где Никосия <br><em>ест и пьёт</em>',
+      text:"Самый свежий гид по кафе и ресторанам столицы. Откройте для себя лучшие места и переходите прямо на сайт каждого.",
+      searchPh:"Поиск по названию или району…",searchBtn:"Поиск",catCafe:"☕ Кафе",catRest:"🍽️ Рестораны",allAreas:"Все районы",allTypes:"Все типы",featured:"★ Рекомендуем",
+      gridCafe:"Кафе в Никосии",gridRest:"Рестораны в Никосии",countCafe:"кафе",countRest:"ресторанов",countOne_cafe:"кафе",countOne_rest:"ресторан",inArea:"в районе",
+      visit:"Перейти на сайт →",noWeb:"Нет сайта — закажите →",confirm:"ⓘ Данные уточняются",
+      ownerTitle:"У вас кафе или ресторан в Никосии?",
+      ownerText:"Вы уже бесплатно в каталоге. Хотите обновить данные, красивый сайт с онлайн-заказами или помощь с рекламой? Это то, чем мы занимаемся — давайте поговорим.",
+      ownerBtn:"Получить свою страницу — Бесплатно",
+      footText:"Современный гид по еде и напиткам в Никосии.<br>Открывайте местные жемчужины · Поддержите кипрский бизнес.",
+      footSmall:"Демо-каталог · Некоторые данные предварительны и уточняются с каждым заведением · Никосия, Кипр · 2026",
+      alert:"Здесь будет ссылка на WhatsApp или ваша форма связи!"}
+  };
+  const AREAS={
+    "Old Town":{el:"Παλιά Πόλη",en:"Old Town",ru:"Старый город"},
+    "City Center":{el:"Κέντρο",en:"City Center",ru:"Центр"},
+    "Strovolos":{el:"Στρόβολος",en:"Strovolos",ru:"Строволос"},
+    "Aglantzia":{el:"Αγλαντζιά",en:"Aglantzia",ru:"Аглангια"}
+  };
+  const TYPES={
+    specialty:{el:"Specialty Καφές",en:"Specialty Coffee",ru:"Спешелти-кофе"},
+    brunch:{el:"Brunch",en:"Brunch",ru:"Бранч"},
+    traditional:{el:"Παραδοσιακό",en:"Traditional",ru:"Традиционное"},
+    bar:{el:"Café-Bar",en:"Café-Bar",ru:"Кафе-бар"},
+    allday:{el:"All-day",en:"All-day",ru:"Весь день"},
+    cypriot:{el:"Κυπριακή",en:"Cypriot",ru:"Кипрская"},
+    grill:{el:"Grill",en:"Grill",ru:"Гриль"},
+    seafood:{el:"Θαλασσινά",en:"Seafood",ru:"Морепродукты"},
+    syrian:{el:"Συριακή",en:"Syrian",ru:"Сирийская"},
+    armenian:{el:"Αρμενική",en:"Armenian",ru:"Армянская"},
+    italian:{el:"Ιταλική",en:"Italian",ru:"Итальянская"},
+    vegan:{el:"Vegan",en:"Vegan",ru:"Веган"},
+    international:{el:"Διεθνής",en:"International",ru:"Интернациональная"}
+  };
+  const typesByCat={
+    cafe:["all","specialty","brunch","traditional","bar","allday"],
+    restaurant:["all","cypriot","grill","seafood","syrian","armenian","italian","vegan","international"]
+  };
+  const places=[
+    {cat:"cafe",type:"specialty",name:"Brew Lab",img:"https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.8",emoji:"☕",cls:"p1",price:"€€",website:null,desc:{el:"Specialty καφές σε ένα μικρό, ζεστό μέρος στην καρδιά της Λευκωσίας. Αγαπημένο των ντόπιων.",en:"Specialty coffee in a small, cosy spot in the heart of Nicosia. A local favourite.",ru:"Спешелти-кофе в маленьком уютном месте в сердце Никосии. Любимое место местных."}},
+    {cat:"cafe",type:"brunch",featured:true,name:"Luna Cafe Art Shop",img:"https://images.unsplash.com/photo-1521017432531-fbd92d768814?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.9",emoji:"🎨",cls:"p2",price:"€",website:null,desc:{el:"Γοητευτικό café-κατάστημα τέχνης με κήπο και δημιουργική, χαλαρή ατμόσφαιρα.",en:"Charming art-shop café with a garden and a creative, laid-back vibe.",ru:"Очаровательное кафе-арт-магазин с садом и творческой, расслабленной атмосферой."}},
+    {cat:"cafe",type:"brunch",name:"Iheart Cafe",img:"https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"5.0",emoji:"❤️",cls:"p3",price:"€",website:null,desc:{el:"Καφές εξαιρετικής ποιότητας μαζί με νόστιμο φαγητό και σνακ, με vegan επιλογές.",en:"Great quality coffee plus delicious food and snacks, including vegan options.",ru:"Кофе отличного качества, вкусная еда и закуски, включая веганские блюда."}},
+    {cat:"cafe",type:"traditional",name:"Apomero",img:"https://images.unsplash.com/photo-1559925393-8be0ec4767c8?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.8",emoji:"🥧",cls:"p4",price:"€",website:null,desc:{el:"Ήσυχο καταφύγιο κοντά στην Πύλη Αμμοχώστου. Σπιτικές πορτοκαλόπιτες & παραδοσιακά γλυκά.",en:"Tranquil haven near Famagusta Gate. Homemade orange pies & traditional treats.",ru:"Тихое убежище у ворот Фамагусты. Домашние апельсиновые пироги и традиционные сладости."}},
+    {cat:"cafe",type:"allday",name:"Lorenza Coffee",img:"https://images.unsplash.com/photo-1453614512568-c4024d13c247?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.6",emoji:"☕",cls:"p5",price:"€",website:null,desc:{el:"Καλή εξυπηρέτηση, νόστιμο φαγητό και καλοί άνθρωποι. Ιδανικό για οικογένεια & φίλους.",en:"Good service, delicious food and good people. Great for family & friends.",ru:"Хороший сервис, вкусная еда и приятные люди. Отлично для семьи и друзей."}},
+    {cat:"cafe",type:"traditional",name:"Ta Kala Kathoumena",img:"https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.7",emoji:"☕",cls:"p6",price:"€",website:null,desc:{el:"Από το 1996. Ένα αγαπημένο στέκι που προσελκύει κόσμο όλο τον χρόνο.",en:"Established 1996. A beloved spot drawing crowds all year round.",ru:"Основано в 1996 году. Любимое место, привлекающее людей круглый год."}},
+    {cat:"cafe",type:"specialty",featured:true,name:"Kivu Specialty Coffee",img:"https://images.unsplash.com/photo-1498804103079-a6351b050096?w=600&q=80&auto=format&fit=crop",area:"Strovolos",rating:"4.7",emoji:"☕",cls:"p7",price:"€€",website:null,desc:{el:"Specialty καφές aeropress & dripper με φρέσκα κρουασάν και σπανακόπιτα. 35A Ιφιγενείας.",en:"Aeropress & dripper specialty coffee with fresh croissants and spinach pie. 35A Ifigenias.",ru:"Спешелти-кофе аэропресс и дриппер со свежими круассанами и пирогом со шпинатом. Ифигении 35А."}},
+    {cat:"cafe",type:"bar",name:"Halara Cafe",img:"https://images.unsplash.com/photo-1514066558159-fc8c737ef259?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.4",emoji:"🍹",cls:"p8",price:"€",website:null,desc:{el:"Το καλύτερο café-bar στην παλιά Λευκωσία. Απαλός καφές την ημέρα, χαλαρό μπαρ το βράδυ.",en:"The best café-bar in old Nicosia. Smooth coffee by day, relaxed bar by night.",ru:"Лучший кафе-бар в старой Никосии. Мягкий кофе днём, спокойный бар вечером."}},
+    {cat:"cafe",type:"specialty",name:"Serious Black Coffee",img:"https://images.unsplash.com/photo-1447933601403-0c6688de566e?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.6",emoji:"☕",cls:"p1",price:"€€",website:null,desc:{el:"Πλούσιοι flat white και σοβαρή προσέγγιση στον ποιοτικό καφέ.",en:"Rich flat whites and a serious approach to quality coffee.",ru:"Насыщенный флэт-уайт и серьёзный подход к качественному кофе."}},
+    {cat:"cafe",type:"allday",name:"Caffè Nero Onasagorou",img:"https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.0",emoji:"☕",cls:"p3",price:"€€",website:null,desc:{el:"Χαλαρό μέρος για καφέ, χυμούς και ελαφριά γεύματα στην οδό Ονασαγόρου.",en:"Relaxed spot for coffee, juices and light meals on Onasagorou Street.",ru:"Спокойное место для кофе, соков и лёгких блюд на улице Онасагору."}},
+    {cat:"restaurant",type:"cypriot",featured:true,name:"Zanettos Tavern",img:"https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.7",emoji:"🍖",cls:"p3",price:"€€",website:null,desc:{el:"Από το 1938 — η εμβληματική κυπριακή ταβέρνα της Λευκωσίας. Ατελείωτος μεζές & ζωντανή μουσική.",en:"Since 1938 — Nicosia's iconic Cypriot tavern. Endless meze & live traditional music.",ru:"С 1938 года — культовая кипрская таверна Никосии. Бесконечное мезе и живая музыка."}},
+    {cat:"restaurant",type:"grill",name:"To Anamma Traditional",img:"https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.5",emoji:"🔥",cls:"p1",price:"€€",website:null,desc:{el:"Αυθεντικό κυπριακό μπάρμπεκιου στα κάρβουνα. Γενναιόδωρες, παραδοσιακές μερίδες. Λήδρας 89.",en:"Authentic charcoal-grilled Cypriot barbecue. Generous, traditional portions. Ledra St 89.",ru:"Настоящее кипрское барбекю на углях. Щедрые традиционные порции. Ледра 89."}},
+    {cat:"restaurant",type:"seafood",name:"Pyxida Fish Tavern",img:"https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.6",emoji:"🐟",cls:"p2",price:"€€€",website:null,desc:{el:"Μία από τις καλύτερες ψαροταβέρνες της Λευκωσίας — φρέσκα θαλασσινά & ζεστή φιλοξενία.",en:"One of Nicosia's best fish taverns — fresh seafood & warm hospitality.",ru:"Одна из лучших рыбных таверн Никосии — свежие морепродукты и тёплое гостеприимство."}},
+    {cat:"restaurant",type:"syrian",name:"Sawa Restaurant",img:"https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.5",emoji:"🥙",cls:"p4",price:"€€",website:null,desc:{el:"Αυθεντική συριακή κουζίνα σε ένα όμορφο, παλατικό περιβάλλον με βεράντες.",en:"Authentic Syrian cuisine in a beautiful palace-like setting with terraces.",ru:"Настоящая сирийская кухня в красивом дворцовом интерьере с террасами."}},
+    {cat:"restaurant",type:"cypriot",name:"DOT Restaurant",img:"https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.6",emoji:"🍽️",cls:"p8",price:"€€€",website:null,desc:{el:"Αυθεντική κυπριακή κουζίνα με δημιουργικές μοντέρνες πινελιές.",en:"Authentic Cypriot cuisine with creative modern twists.",ru:"Аутентичная кипрская кухня с креативными современными нотками."}},
+    {cat:"restaurant",type:"cypriot",name:"Stoa tou Dimitri",img:"https://images.unsplash.com/photo-1559339352-11d035aa65de?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.5",emoji:"🍷",cls:"p5",price:"€€",website:null,desc:{el:"Μία από τις καλύτερες ταβέρνες της Λευκωσίας — αυθεντικός κυπριακός μεζές σε χαλαρό περιβάλλον.",en:"One of the best taverns in Nicosia — authentic Cypriot meze in a relaxing setting.",ru:"Одна из лучших таверн Никосии — аутентичное кипрское мезе в спокойной обстановке."}},
+    {cat:"restaurant",type:"international",name:"Henry's",img:"https://images.unsplash.com/photo-1424847651672-bf20a4b0982b?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.4",emoji:"🍴",cls:"p7",price:"€€",website:null,desc:{el:"Τοπικές γεύσεις συναντούν διεθνές στιλ. Λεωφ. Μακαρίου Γ' 30b.",en:"Local flavours meet international flair. Makarios III Ave 30b.",ru:"Местные вкусы и международный стиль. Проспект Макариоса III, 30b."}},
+    {cat:"restaurant",type:"armenian",name:"Avo",img:"https://images.unsplash.com/photo-1540914124281-342587941389?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.5",emoji:"🥘",cls:"p6",price:"€€",website:null,desc:{el:"Αυθεντική αρμενική κουζίνα — κάθε πιάτο αφηγείται μια ιστορία πλούσιας κληρονομιάς.",en:"Authentic Armenian cuisine — every dish tells a story of rich heritage.",ru:"Аутентичная армянская кухня — каждое блюдо рассказывает историю богатого наследия."}},
+    {cat:"restaurant",type:"italian",name:"Il Forno",img:"https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.4",emoji:"🍕",cls:"p1",price:"€€",website:null,desc:{el:"Αυθεντική ιταλική κουζίνα — η παράδοση συναντά τη γεύση σε κάθε πιάτο.",en:"Authentic Italian cooking — tradition meets taste in every dish.",ru:"Настоящая итальянская кухня — традиции и вкус в каждом блюде."}},
+    {cat:"restaurant",type:"grill",name:"El Greco",img:"https://images.unsplash.com/photo-1544025162-d76694265947?w=600&q=80&auto=format&fit=crop",area:"Aglantzia",rating:"4.5",emoji:"🍖",cls:"p3",price:"€€",website:null,desc:{el:"Εξαιρετικά κρέατα & θαλασσινά, ζουμερά σουβλάκια. Οδός Κερύνειας 190, Αγλαντζιά.",en:"Exceptional meat & seafood, juicy kebabs and souvlaki. 190 Kyrenia St, Aglantzia.",ru:"Превосходное мясо и морепродукты, сочные кебабы и сувлаки. Улица Кирении 190, Аглангия."}},
+    {cat:"restaurant",type:"vegan",name:"Elysian Plant-Based",img:"https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80&auto=format&fit=crop",area:"Old Town",rating:"4.7",emoji:"🌱",cls:"p2",price:"€€",website:null,desc:{el:"Αγαπημένη vegan κουζίνα & μπαρ φυτικής βάσης. Υπέροχο φαγητό.",en:"Beloved vegan & plant-based kitchen and bar. Great food.",ru:"Любимая веганская кухня и бар на растительной основе. Прекрасная еда."}},
+    {cat:"restaurant",type:"international",name:"Rokoko Kitchen & Bar",img:"https://images.unsplash.com/photo-1551632436-cbf8dd35adfa?w=600&q=80&auto=format&fit=crop",area:"City Center",rating:"4.4",emoji:"🍸",cls:"p4",price:"€€€",website:null,desc:{el:"Όπου η παράδοση συναντά τη μοντέρνα μαγειρική τέχνη, με ζωντανό μπαρ.",en:"Where tradition meets modern culinary artistry, with a lively bar.",ru:"Где традиции встречаются с современным кулинарным искусством и живым баром."}}
+  ];
+  const areasByCat={cafe:["all","Old Town","City Center","Strovolos"],restaurant:["all","Old Town","City Center","Aglantzia"]};
+  let lang="el",activeCat="cafe",activeArea="all",activeType="all",searchTerm="",dark=true;
+  function toggleTheme(){dark=!dark;document.documentElement.classList.toggle('light',!dark);document.getElementById('themeBtn').textContent=dark?'🌙':'☀️';}
+
+  function applyStaticText(){
+    const t=T[lang];
+    document.getElementById('eyebrow').textContent=t.eyebrow;
+    document.getElementById('heroTitle').innerHTML=t.title;
+    document.getElementById('heroText').textContent=t.text;
+    document.getElementById('search').placeholder=t.searchPh;
+    document.getElementById('searchBtn').textContent=t.searchBtn;
+    document.getElementById('catCafe').textContent=t.catCafe;
+    document.getElementById('catRest').textContent=t.catRest;
+    document.getElementById('ownerTitle').textContent=t.ownerTitle;
+    document.getElementById('ownerText').textContent=t.ownerText;
+    document.getElementById('ownerBtn').textContent=t.ownerBtn;
+    document.getElementById('footBrand').textContent="🍽️ "+t.brand;
+    document.getElementById('footText').innerHTML=t.footText;
+    document.getElementById('footSmall').textContent=t.footSmall;
+    document.documentElement.lang=lang;
+  }
+  function renderFilters(){
+    const t=T[lang];
+    document.getElementById('filters').innerHTML=areasByCat[activeCat].map(a=>{
+      const label=a==="all"?t.allAreas:AREAS[a][lang];
+      return `<div class="chip${a===activeArea?' active':''}" data-area="${a}">${label}</div>`;
+    }).join('');
+  }
+  function renderTypeFilters(){
+    const t=T[lang];
+    document.getElementById('typeFilters').innerHTML=typesByCat[activeCat].map(tp=>{
+      const label=tp==="all"?t.allTypes:TYPES[tp][lang];
+      return `<div class="chip${tp===activeType?' type-active':''}" data-type="${tp}">${label}</div>`;
+    }).join('');
+  }
+  function render(){
+    const t=T[lang];
+    const filtered=places.filter(p=>p.cat===activeCat
+      &&(activeArea==="all"||p.area===activeArea)
+      &&(activeType==="all"||p.type===activeType)
+      &&(!searchTerm||p.name.toLowerCase().includes(searchTerm)||AREAS[p.area][lang].toLowerCase().includes(searchTerm)||p.area.toLowerCase().includes(searchTerm))
+    ).sort((a,b)=>(b.featured?1:0)-(a.featured?1:0));
+    document.getElementById('gridTitle').textContent=activeCat==="cafe"?t.gridCafe:t.gridRest;
+    const noun=filtered.length===1?(activeCat==="cafe"?t.countOne_cafe:t.countOne_rest):(activeCat==="cafe"?t.countCafe:t.countRest);
+    document.getElementById('count').textContent=filtered.length+" "+noun+(activeArea==="all"?"":" "+t.inArea+" "+AREAS[activeArea][lang]);
+    document.getElementById('grid').innerHTML=filtered.map((p,i)=>`
+      <article class="place" style="animation-delay:${i*0.05}s">
+        <div class="photo ${p.cls}${p.img?' has-img':''}">${p.img?`<img src="${p.img}" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.classList.remove('has-img')">`:''}
+${p.featured?`<span class="feat-badge">${t.featured}</span>`:''}
+<span class="photo-emoji">${p.emoji}</span><span class="rating">★ ${p.rating}</span><span class="tag">${p.price}</span></div>
+        <div class="body">
+          <h3>${p.name}</h3>
+          <div class="area">📍 ${AREAS[p.area][lang]}</div>
+          <p class="desc">${p.desc[lang]}</p>
+          ${p.website?`<a class="visit" href="${p.website}" target="_blank">${t.visit}</a>`:`<a class="visit none" href="#owner">${t.noWeb}</a>`}
+          <div class="confirm">${t.confirm}</div>
+        </div>
+      </article>`).join('');
+  }
+  function refreshAll(){applyStaticText();renderFilters();renderTypeFilters();render();}
+  document.getElementById('langs').addEventListener('click',e=>{const b=e.target.closest('.lang');if(!b)return;document.querySelectorAll('.lang').forEach(l=>l.classList.remove('active'));b.classList.add('active');lang=b.dataset.lang;refreshAll();});
+  document.getElementById('cats').addEventListener('click',e=>{const b=e.target.closest('.cat');if(!b)return;document.querySelectorAll('.cat').forEach(c=>c.classList.remove('active'));b.classList.add('active');activeCat=b.dataset.cat;activeArea="all";activeType="all";renderFilters();renderTypeFilters();render();});
+  document.getElementById('filters').addEventListener('click',e=>{if(!e.target.classList.contains('chip'))return;activeArea=e.target.dataset.area;renderFilters();render();});
+  document.getElementById('typeFilters').addEventListener('click',e=>{if(!e.target.classList.contains('chip'))return;activeType=e.target.dataset.type;renderTypeFilters();render();});
+  function doSearch(){searchTerm=document.getElementById('search').value.toLowerCase().trim();render();}
+  function ownerClick(){alert(T[lang].alert);}
+  document.getElementById('search').addEventListener('keyup',e=>{if(e.key==='Enter')doSearch();});
+  refreshAll();
+  (function(){
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});
+    },{threshold:0.08,rootMargin:'0px 0px -20px 0px'});
+    document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  })();
+</script>
+</body>
+</html>
