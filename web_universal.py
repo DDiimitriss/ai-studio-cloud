@@ -1,22 +1,14 @@
 # -*- coding: utf-8 -*-
+
 # =============================================================================
-#  AI Studio – Cloud Edition (OpenRouter)
-#  Version: 2.0  –  27 May 2026
+# AI Studio – Cloud Edition (OpenRouter)
+# Version: 2.1 – 07 June 2026
 #
-#  Fixes in this version:
-#   1. Deprecated model IDs replaced with current working ones
-#   2. Image model correctly set to Gemini Nano Banana (free + paid fallback)
-#   3. Stable Flask secret key (session-safe across restarts)
-#   4. _openrouter_cache defined before functions that reference it
-#   5. refine_html() undefined-variable bug fixed (raw: response)
-#   6. Real token usage extracted from API response
-#   7. <think>…</think> blocks stripped from reasoning models (stream + non-stream)
-#   8. stream_smart_agent() checks for API errors before JSON-parsing
-#   9. generate_image_with_openrouter() handles Gemini multimodal list responses
-#  10. VALID_MODELS whitelist expanded
-#  11. NEW: Full fallback chain for text models (never silently fails)
-#  12. NEW: Full fallback chain for image models (free → paid → error)
-#  13. NEW: /health endpoint shows active model + API key status
+# Fixes in this version:
+# 1. Laguna M.1 set as DEFAULT model (agentic coding beast)
+# 2. Qwen 3.6 Plus as fallback #1
+# 3. Enhanced logging to track model selection
+# 4. All previous fixes preserved
 # =============================================================================
 
 import os
@@ -31,7 +23,7 @@ import base64
 import subprocess
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
-                   session, Response, stream_with_context, send_from_directory)
+session, Response, stream_with_context, send_from_directory)
 from urllib.parse import urljoin, urlparse
 import chromadb
 from chromadb.utils import embedding_functions
@@ -39,18 +31,21 @@ from duckduckgo_search import DDGS
 from playwright.sync_api import sync_playwright
 import psutil
 
-# ===========================================================================
+
+# =============================================================================
 # Flask app
-# ===========================================================================
+# =============================================================================
+
 app = Flask(__name__)
+
 # Stable secret key – sessions survive restarts.
-# Override by setting FLASK_SECRET_KEY in your Railway environment variables.
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "studio-secret-change-me-in-prod")
 
 
-# ===========================================================================
+# =============================================================================
 # Portable home directory
-# ===========================================================================
+# =============================================================================
+
 def get_user_home():
     if os.name == 'nt':
         return os.environ.get("USERPROFILE", os.path.expanduser("~"))
@@ -59,47 +54,57 @@ def get_user_home():
 USER_HOME = get_user_home()
 
 
-# ===========================================================================
+# =============================================================================
 # OpenRouter configuration
-# ===========================================================================
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
+# =============================================================================
 
-# ---------------------------------------------------------------------------
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+# -----------------------------------------------------------------------------
 # Text model fallback chain
 # Tried in order; skips a model on 400 / 404 / 429 / 402 and tries the next.
-# ---------------------------------------------------------------------------
-FREE_TEXT_MODELS = [
-    "meta-llama/llama-4-scout:free",        # default — fastest, low-latency
-    "meta-llama/llama-4-maverick:free",     # 1M context, vision input
-    "deepseek/deepseek-v3:free",            # strong reasoning & coding
-    "deepseek/deepseek-v4-flash:free",      # smart reasoning
-    "openai/gpt-oss-120b:free",             # 117B MoE, great all-rounder (chain terminus)
-]
-DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]
+# -----------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
+FREE_TEXT_MODELS = [
+    "poolside/laguna-m.1:free",       # ← DEFAULT: Agentic Coding Beast
+    "qwen/qwen3.6-plus",              # ← Fallback #1: Big Brain
+    "qwen/qwen3.6-flash",             # ← Fallback #2: Fast & Smart
+    "meta-llama/llama-4-scout:free",  # fallback — fastest, low-latency
+    "meta-llama/llama-4-maverick:free", # 1M context, vision input
+    "deepseek/deepseek-v3:free",      # strong reasoning & coding
+    "deepseek/deepseek-v4-flash:free", # smart reasoning
+    "openai/gpt-oss-120b:free",       # 117B MoE, great all-rounder
+]
+DEFAULT_TEXT_MODEL = FREE_TEXT_MODELS[0]  # Now Laguna M.1
+
+
+# -----------------------------------------------------------------------------
 # Image model fallback chain
 # Only true image-generation models (not chat models) should be here.
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 IMAGE_MODELS = [
-    "google/gemini-2.5-flash-image",               # Nano Banana 1 (paid GA, confirmed working)
-    "google/gemini-3.1-flash-image-preview",       # Nano Banana 2 (paid, newer)
-    "x-ai/grok-imagine-image-quality:free",        # Last-resort fallback
+    "google/gemini-2.5-flash-image",          # Nano Banana 1 (paid GA, confirmed working)
+    "google/gemini-3.1-flash-image-preview",  # Nano Banana 2 (paid, newer)
+    "x-ai/grok-imagine-image-quality:free",   # Last-resort fallback
 ]
 
-# ---------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Video generation model
-# ---------------------------------------------------------------------------
-VIDEO_MODEL     = "x-ai/grok-imagine-video"
+# -----------------------------------------------------------------------------
+
+VIDEO_MODEL = "x-ai/grok-imagine-video"
 OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
 
-# ---------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Combined whitelist (used by sanitize_model)
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {VIDEO_MODEL} | {
-    "qwen/qwen3.6-plus",
-    "qwen/qwen3.6-flash",
     "google/gemini-2.5-flash-preview",
     "google/gemini-2.5-flash",
     "stepfun/step-3.5-flash",
@@ -108,6 +113,7 @@ VALID_MODELS = set(FREE_TEXT_MODELS) | set(IMAGE_MODELS) | {VIDEO_MODEL} | {
     "openrouter/owl-alpha:free",
 }
 
+
 # Response cache – must be defined before any function that references it
 _openrouter_cache: dict = {}
 
@@ -115,17 +121,13 @@ _openrouter_cache: dict = {}
 _http_session = requests.Session()
 
 # Server-side video session state.
-# Flask sessions are cookie-based; writes inside a streaming generator are lost
-# because the Set-Cookie header is sent before the generator body runs.
-# Instead we store video state here, keyed by a tiny per-user ID (vid_sid)
-# that IS safely written into the Flask cookie in the route function body,
-# before the generator starts.
 _video_sessions: dict = {}
 
 
-# ===========================================================================
+# =============================================================================
 # System stats – non-blocking CPU sampling + one-time GPU probe
-# ===========================================================================
+# =============================================================================
+
 _cpu_percent_cache: float = 0.0
 _HAS_GPU: bool = False
 
@@ -133,7 +135,7 @@ def _probe_gpu() -> bool:
     """Check once at startup whether nvidia-smi exists and has a GPU."""
     try:
         r = subprocess.run(["nvidia-smi", "-L"],
-                           capture_output=True, text=True, timeout=1)
+                          capture_output=True, text=True, timeout=1)
         return r.returncode == 0 and bool(r.stdout.strip())
     except Exception:
         return False
@@ -143,48 +145,48 @@ _HAS_GPU = _probe_gpu()
 def _cpu_sampler_loop():
     """Background daemon: prime the counter then sample every 5 s (non-blocking)."""
     global _cpu_percent_cache
-    psutil.cpu_percent()          # prime — first call always returns 0.0
+    psutil.cpu_percent()  # prime — first call always returns 0.0
     while True:
         time.sleep(5)
         _cpu_percent_cache = psutil.cpu_percent(interval=None)
 
 threading.Thread(target=_cpu_sampler_loop, daemon=True).start()
 
-
 def _vid_sid() -> str:
-    """Return (and create if needed) a stable video-session ID for this browser.
-    Must be called from a route function body – NOT inside a streaming generator."""
+    """Return (and create if needed) a stable video-session ID for this browser."""
     if "vid_sid" not in session:
         session["vid_sid"] = os.urandom(8).hex()
         session.modified = True
     return session["vid_sid"]
 
-
 def sanitize_model(requested: str) -> str:
     """Return requested model if in whitelist, else fall back to default."""
     if requested in VALID_MODELS:
+        print(f"[sanitize_model] ✅ Using requested model: {requested}")
         return requested
-    print(f"[sanitize_model] '{requested}' not in whitelist → using {DEFAULT_TEXT_MODEL}")
+    print(f"[sanitize_model] ❌ '{requested}' not in whitelist → falling back to {DEFAULT_TEXT_MODEL}")
     return DEFAULT_TEXT_MODEL
 
 
-# ===========================================================================
-# Thinking-tag stripper  (qwen3-coder, deepseek etc. emit <think>…</think>)
-# ===========================================================================
+# =============================================================================
+# Thinking-tag stripper (qwen3-coder, deepseek etc. emit <think>…</think>)
+# =============================================================================
+
 def strip_thinking(text: str) -> str:
     if not isinstance(text, str):
         return text
     return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
 
 
-# ===========================================================================
-# Core OpenRouter – non-streaming  (with full fallback chain)
-# ===========================================================================
+# =============================================================================
+# Core OpenRouter – non-streaming (with full fallback chain)
+# =============================================================================
+
 def ask_openrouter(prompt: str, model: str = None, use_cache: bool = True):
     """
     Send a chat completion request.
-    If `model` is None or equals DEFAULT_TEXT_MODEL the full FREE_TEXT_MODELS
-    chain is tried.  Otherwise only the requested model is tried (still falls
+    If model is None or equals DEFAULT_TEXT_MODEL the full FREE_TEXT_MODELS
+    chain is tried. Otherwise only the requested model is tried (still falls
     back to chain on error).
     Returns (reply_str, token_info_dict | None).
     """
@@ -202,40 +204,43 @@ def ask_openrouter(prompt: str, model: str = None, use_cache: bool = True):
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
     }
 
     for try_model in models_to_try:
+        print(f"[ask_openrouter] 🔄 Trying model: {try_model}")
         cache_key = hashlib.md5((try_model + prompt).encode()).hexdigest()
         if use_cache and cache_key in _openrouter_cache:
             return _openrouter_cache[cache_key], None
 
         payload = {
-            "model":       try_model,
-            "messages":    [{"role": "user", "content": prompt}],
+            "model": try_model,
+            "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7,
         }
 
         try:
             resp = _http_session.post(OPENROUTER_URL, headers=headers,
-                                      json=payload, timeout=60)
+                                     json=payload, timeout=60)
 
             if resp.status_code in (400, 402, 404, 429):
-                print(f"[ask_openrouter] {try_model} → HTTP {resp.status_code}, trying next…")
+                print(f"[ask_openrouter] ❌ {try_model} → HTTP {resp.status_code}, trying next…")
                 continue
 
             if resp.status_code == 200:
-                data  = resp.json()
-                raw   = data["choices"][0]["message"]["content"]
+                data = resp.json()
+                raw = data["choices"][0]["message"]["content"]
                 reply = strip_thinking(raw)
 
                 usage = data.get("usage", {})
                 token_info = {
-                    "model_used":        try_model,
-                    "total_tokens":      usage.get("total_tokens", 0),
-                    "prompt_tokens":     usage.get("prompt_tokens", 0),
+                    "model_used": try_model,
+                    "total_tokens": usage.get("total_tokens", 0),
+                    "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
                 }
+                
+                print(f"[ask_openrouter] ✅ SUCCESS using model: {try_model}")
 
                 if use_cache:
                     if len(_openrouter_cache) >= 50:
@@ -248,16 +253,17 @@ def ask_openrouter(prompt: str, model: str = None, use_cache: bool = True):
             return f"OpenRouter error: {resp.status_code} – {resp.text}", None
 
         except Exception as exc:
-            print(f"[ask_openrouter] {try_model} exception: {exc}, trying next…")
+            print(f"[ask_openrouter] ❌ {try_model} exception: {exc}, trying next…")
             continue
 
     return ("All free text models are currently unavailable or rate-limited. "
             "Please try again in a few minutes."), None
 
 
-# ===========================================================================
-# Core OpenRouter – streaming  (with fallback chain)
-# ===========================================================================
+# =============================================================================
+# Core OpenRouter – streaming (with fallback chain)
+# =============================================================================
+
 def ask_openrouter_stream(prompt: str, model: str = None):
     if not OPENROUTER_API_KEY:
         yield f"data: {json.dumps({'error': 'OPENROUTER_API_KEY not set'})}\n\n"
@@ -271,29 +277,32 @@ def ask_openrouter_stream(prompt: str, model: str = None):
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
     }
 
     for try_model in models_to_try:
+        print(f"[stream] 🔄 Trying model: {try_model}")
         payload = {
-            "model":    try_model,
+            "model": try_model,
             "messages": [{"role": "user", "content": prompt}],
-            "stream":   True,
+            "stream": True,
         }
         try:
             with _http_session.post(OPENROUTER_URL, headers=headers,
-                                    json=payload, stream=True, timeout=120) as resp:
+                                   json=payload, stream=True, timeout=120) as resp:
 
                 if resp.status_code in (400, 402, 404, 429):
-                    print(f"[stream] {try_model} → HTTP {resp.status_code}, trying next…")
+                    print(f"[stream] ❌ {try_model} → HTTP {resp.status_code}, trying next…")
                     continue
 
                 if resp.status_code != 200:
                     yield f"data: {json.dumps({'error': f'OpenRouter {resp.status_code}'})}\n\n"
                     return
+                
+                print(f"[stream] ✅ SUCCESS streaming from model: {try_model}")
 
                 # State machine to strip <think>…</think> blocks mid-stream
-                in_think  = False
+                in_think = False
                 think_buf = ""
 
                 for raw_line in resp.iter_lines():
@@ -308,8 +317,8 @@ def ask_openrouter_stream(prompt: str, model: str = None):
                     try:
                         chunk = json.loads(line)
                         token = (chunk.get("choices", [{}])[0]
-                                     .get("delta", {})
-                                     .get("content", ""))
+                                .get("delta", {})
+                                .get("content", ""))
                         if not token:
                             continue
 
@@ -318,15 +327,15 @@ def ask_openrouter_stream(prompt: str, model: str = None):
                                 before, rest = token.split("<think>", 1)
                                 if before:
                                     yield f"data: {json.dumps({'token': before})}\n\n"
-                                in_think  = True
+                                in_think = True
                                 think_buf = rest
                             else:
                                 yield f"data: {json.dumps({'token': token})}\n\n"
                         else:
                             think_buf += token
                             if "</think>" in think_buf:
-                                _, after  = think_buf.split("</think>", 1)
-                                in_think  = False
+                                _, after = think_buf.split("</think>", 1)
+                                in_think = False
                                 think_buf = ""
                                 if after:
                                     yield f"data: {json.dumps({'token': after})}\n\n"
@@ -334,19 +343,20 @@ def ask_openrouter_stream(prompt: str, model: str = None):
                         continue
 
                 yield f"data: {json.dumps({'done': True})}\n\n"
-                return   # success – stop trying fallbacks
+                return  # success – stop trying fallbacks
 
         except Exception as exc:
-            print(f"[stream] {try_model} exception: {exc}, trying next…")
+            print(f"[stream] ❌ {try_model} exception: {exc}, trying next…")
             continue
 
     yield f"data: {json.dumps({'error': 'All streaming models failed or are rate-limited.'})}\n\n"
     yield f"data: {json.dumps({'done': True})}\n\n"
 
 
-# ===========================================================================
-# Image generation  (Gemini Nano Banana via OpenRouter, free → paid fallback)
-# ===========================================================================
+# =============================================================================
+# Image generation (Gemini Nano Banana via OpenRouter, free → paid fallback)
+# =============================================================================
+
 def generate_image_with_openrouter(prompt: str, image_base64: str = None):
     """
     Returns (filepath_or_None, error_str_or_None).
@@ -357,27 +367,27 @@ def generate_image_with_openrouter(prompt: str, image_base64: str = None):
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
     }
 
     content_parts = [{"type": "text", "text": prompt}]
     if image_base64:
         b64 = image_base64.split(",")[1] if "," in image_base64 else image_base64
         content_parts.append({
-            "type":      "image_url",
+            "type": "image_url",
             "image_url": {"url": f"data:image/png;base64,{b64}"},
         })
 
     last_error = "Unknown error"
     for img_model in IMAGE_MODELS:
         payload = {
-            "model":      img_model,
-            "messages":   [{"role": "user", "content": content_parts}],
-            "modalities": ["image", "text"],   # ★ Tells OpenRouter we want an image back
+            "model": img_model,
+            "messages": [{"role": "user", "content": content_parts}],
+            "modalities": ["image", "text"],  # ★ Tells OpenRouter we want an image back
         }
         try:
             resp = _http_session.post(OPENROUTER_URL, headers=headers,
-                                      json=payload, timeout=120)
+                                     json=payload, timeout=120)
 
             if resp.status_code in (400, 402, 404, 429):
                 last_error = f"Model {img_model} returned HTTP {resp.status_code}"
@@ -442,7 +452,6 @@ def generate_image_with_openrouter(prompt: str, image_base64: str = None):
 
     return None, f"Image generation failed: {last_error}"
 
-
 def _extract_image_from_text(text: str):
     """Scan a text string for an image (markdown URL, plain URL, base64). Returns filepath or None."""
     # Markdown: ![alt](url)
@@ -459,11 +468,10 @@ def _extract_image_from_text(text: str):
         return _save_b64_image(m.group(2), m.group(1))
     return None
 
-
 def _save_b64_image(b64_string: str, ext: str = "png"):
     try:
-        data     = base64.b64decode(b64_string)
-        ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+        data = base64.b64decode(b64_string)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = os.path.join("static", "generated", f"generated_{ts}.{ext}")
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
@@ -473,7 +481,6 @@ def _save_b64_image(b64_string: str, ext: str = "png"):
         print(f"[_save_b64_image] {exc}")
         return None
 
-
 def _download_image(url: str):
     try:
         r = requests.get(url, timeout=30)
@@ -481,7 +488,7 @@ def _download_image(url: str):
             ext = url.split(".")[-1].split("?")[0].lower()
             if ext not in ("png", "jpg", "jpeg", "gif", "webp"):
                 ext = "png"
-            ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = os.path.join("static", "generated", f"generated_{ts}.{ext}")
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "wb") as f:
@@ -492,12 +499,11 @@ def _download_image(url: str):
         print(f"[_download_image] {exc}")
         return None
 
-
 def _download_video(url: str, headers: dict = None):
     try:
         r = requests.get(url, headers=headers, timeout=120)
         if r.status_code == 200:
-            ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = os.path.join("static", "generated", f"generated_{ts}.mp4")
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "wb") as f:
@@ -509,36 +515,37 @@ def _download_video(url: str, headers: dict = None):
         return None
 
 
-# ===========================================================================
-# Video generation  (x-ai/grok-imagine-video via OpenRouter async jobs API)
-# ===========================================================================
+# =============================================================================
+# Video generation (x-ai/grok-imagine-video via OpenRouter async jobs API)
+# =============================================================================
+
 def generate_video_with_openrouter(prompt: str,
-                                    duration: int = 3,
-                                    resolution: str = "480p",
-                                    aspect_ratio: str = "16:9",
-                                    image_b64: str = None):
+                                  duration: int = 3,
+                                  resolution: str = "480p",
+                                  aspect_ratio: str = "16:9",
+                                  image_b64: str = None):
     """
     Submit an async video job, poll until complete, download the mp4.
     Returns (filepath_or_None, error_str_or_None).
 
-    duration     : 1–15 seconds. Default 3 (~$0.15). Pass 8 for the upgrade path (~$0.40).
-    resolution   : "480p" (cheap) or "720p" (HD).
+    duration : 1–15 seconds. Default 3 (~$0.15). Pass 8 for the upgrade path (~$0.40).
+    resolution : "480p" (cheap) or "720p" (HD).
     aspect_ratio : "16:9" | "9:16" | "1:1" | "4:3" | "3:4" | "3:2" | "2:3".
-    image_b64    : optional base64 data URL (or raw b64 string) to use as the first frame
-                   for image-to-video generation.  Omit for text-only video.
+    image_b64 : optional base64 data URL (or raw b64 string) to use as the first frame
+    for image-to-video generation. Omit for text-only video.
     """
     if not OPENROUTER_API_KEY:
         return None, "OPENROUTER_API_KEY is not set."
 
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type":  "application/json",
+        "Content-Type": "application/json",
     }
     payload = {
-        "model":        VIDEO_MODEL,
-        "prompt":       prompt,
-        "duration":     max(1, min(15, int(duration))),
-        "resolution":   resolution,
+        "model": VIDEO_MODEL,
+        "prompt": prompt,
+        "duration": max(1, min(15, int(duration))),
+        "resolution": resolution,
         "aspect_ratio": aspect_ratio,
     }
 
@@ -549,8 +556,8 @@ def generate_video_with_openrouter(prompt: str,
         raw_b64 = image_b64.split(",")[1] if "," in image_b64 else image_b64
         payload["frame_images"] = [
             {
-                "type":       "image_url",
-                "image_url":  {"url": f"data:image/jpeg;base64,{raw_b64}"},
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{raw_b64}"},
                 "frame_type": "first_frame",
             }
         ]
@@ -558,7 +565,7 @@ def generate_video_with_openrouter(prompt: str,
     # ── Submit job ────────────────────────────────────────────────
     try:
         resp = requests.post(OPENROUTER_VIDEOS_URL, headers=headers,
-                             json=payload, timeout=30)
+                            json=payload, timeout=30)
     except Exception as exc:
         return None, f"Video submit request failed: {exc}"
 
@@ -578,7 +585,7 @@ def generate_video_with_openrouter(prompt: str,
     # Use the polling_url from the response if provided, otherwise build it
     poll_url = job.get("polling_url") or f"{OPENROUTER_VIDEOS_URL}/{job_id}"
 
-    print(f"[video_gen] Job submitted: {job_id}  poll_url={poll_url}")
+    print(f"[video_gen] Job submitted: {job_id} poll_url={poll_url}")
 
     # ── Poll until done (max 5 minutes, 5-second intervals) ───────
     for attempt in range(60):
@@ -625,53 +632,56 @@ def generate_video_with_openrouter(prompt: str,
     return None, "Video generation timed out after 5 minutes"
 
 
-# ===========================================================================
-# ChromaDB memory  –  lazy init (loads on first use, not at import time)
-# ===========================================================================
+# =============================================================================
+# ChromaDB memory – lazy init (loads on first use, not at import time)
+# =============================================================================
+
 CHROMA_PATH = os.path.join(USER_HOME, ".qwen_studio_memory")
 os.makedirs(CHROMA_PATH, exist_ok=True)
 
-chroma_client:     object = None
+chroma_client: object = None
 memory_collection: object = None
-_memory_ready:     bool   = False
-
+_memory_ready: bool = False
 
 def _init_memory():
     """Initialize ChromaDB + embedding model on first use. Safe to call multiple times."""
     global chroma_client, memory_collection, _memory_ready
     if _memory_ready:
         return
-    _memory_ready = True   # set before init to block re-entrant calls
+    _memory_ready = True  # set before init to block re-entrant calls
     try:
         chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
         try:
             embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                               model_name="all-MiniLM-L6-v2")
+                model_name="all-MiniLM-L6-v2")
             memory_collection = chroma_client.get_or_create_collection(
-                                    name="studio_memory",
-                                    embedding_function=embedding_fn,
-                                    metadata={"hnsw:space": "cosine"})
+                name="studio_memory",
+                embedding_function=embedding_fn,
+                metadata={"hnsw:space": "cosine"})
             print("[Memory] ChromaDB + SentenceTransformer ready")
         except Exception as emb_err:
             print(f"[Memory] SentenceTransformer unavailable ({emb_err}), using default embedding")
             memory_collection = chroma_client.get_or_create_collection(
-                                    name="studio_memory",
-                                    metadata={"hnsw:space": "cosine"})
+                name="studio_memory",
+                metadata={"hnsw:space": "cosine"})
     except Exception as chroma_err:
         print(f"[Memory] ChromaDB failed ({chroma_err}), using in-memory fallback")
-        chroma_client     = chromadb.EphemeralClient()
+        chroma_client = chromadb.EphemeralClient()
         memory_collection = chroma_client.get_or_create_collection(name="studio_memory")
 
 
-# ---------------------------------------------------------------------------
-# Memory tuning constants  (easy to adjust without touching logic)
-# ---------------------------------------------------------------------------
-MEMORY_RELEVANCE_THRESHOLD = 0.75   # cosine distance; lower = stricter relevance filter
-MEMORY_DUPLICATE_THRESHOLD = 0.15   # skip storing if a near-identical entry already exists
+# -----------------------------------------------------------------------------
+# Memory tuning constants (easy to adjust without touching logic)
+# -----------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
+MEMORY_RELEVANCE_THRESHOLD = 0.75  # cosine distance; lower = stricter relevance filter
+MEMORY_DUPLICATE_THRESHOLD = 0.15  # skip storing if a near-identical entry already exists
+
+
+# -----------------------------------------------------------------------------
 # Prompt quality constants
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 _CHAT_SYSTEM = (
     "You are a knowledgeable, direct assistant. "
     "Give clear and well-structured answers. "
@@ -699,30 +709,32 @@ def enhance_image_prompt(prompt: str) -> str:
     return prompt + _IMG_QUALITY_SUFFIX
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Multi-step chain constants
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 MAX_CHAIN_STEPS = 5
 
 _TOOL_LABELS = {
-    "chat":             "Chat reply",
-    "search":           "Web search",
-    "website":          "Website",
-    "app_gen":          "Code file",
+    "chat": "Chat reply",
+    "search": "Web search",
+    "website": "Website",
+    "app_gen": "Code file",
     "image_generation": "Image",
     "video_generation": "Video",
-    "clone":            "Site clone",
-    "refine_html":      "HTML refinement",
-    "refine_code":      "Code refinement",
-    "code_to_html":     "HTML conversion",
+    "clone": "Site clone",
+    "refine_html": "HTML refinement",
+    "refine_code": "Code refinement",
+    "code_to_html": "HTML conversion",
 }
 
-# ---------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # User profile – JSON sidecar for durable personal facts
 # Always injected at the top of every chat prompt regardless of query.
-# ---------------------------------------------------------------------------
-USER_PROFILE_PATH = os.path.join(CHROMA_PATH, "user_profile.json")
+# -----------------------------------------------------------------------------
 
+USER_PROFILE_PATH = os.path.join(CHROMA_PATH, "user_profile.json")
 
 def load_user_profile() -> dict:
     try:
@@ -731,17 +743,14 @@ def load_user_profile() -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
-
 def save_user_profile(profile: dict):
     with open(USER_PROFILE_PATH, "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2, ensure_ascii=False)
-
 
 def update_user_profile(key: str, value: str):
     p = load_user_profile()
     p[key.lower().replace(" ", "_")] = value
     save_user_profile(p)
-
 
 def get_profile_context() -> str:
     """Return a compact [User Profile] block, or '' if no facts are known."""
@@ -752,16 +761,16 @@ def get_profile_context() -> str:
     return f"[User Profile]\n{lines}\n\n"
 
 
-# ---------------------------------------------------------------------------
-# Fact extraction  –  runs on every user message; populates user_profile.json
+# -----------------------------------------------------------------------------
+# Fact extraction – runs on every user message; populates user_profile.json
 # and handles explicit "remember that X" → ChromaDB store.
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+
 _REMEMBER_RE = re.compile(
     r"(?:please\s+)?(?:remember(?:\s+that)?|note(?:\s+that)?|don'?t\s+forget(?:\s+that)?"
     r"|keep\s+in\s+mind(?:\s+that)?)[:\s]+(.+)",
     re.IGNORECASE | re.DOTALL,
 )
-
 
 def extract_and_store_facts(message: str) -> bool:
     """
@@ -803,15 +812,15 @@ def extract_and_store_facts(message: str) -> bool:
 
     # Preference – accumulate as comma-separated
     pm = re.search(r"i\s+(?:prefer|love|like|enjoy)\s+([^.,!?\n]{3,60})",
-                   message, re.IGNORECASE)
+                  message, re.IGNORECASE)
     if pm:
         profile = load_user_profile()
         existing = profile.get("preferences", "")
         pref_val = pm.group(1).strip()
         if pref_val.lower() not in existing.lower():
             update_user_profile("preferences",
-                                (existing + ", " + pref_val).lstrip(", ") if existing else pref_val)
-        found = True
+                              (existing + ", " + pref_val).lstrip(", ") if existing else pref_val)
+            found = True
 
     # Location
     lm = re.search(
@@ -823,26 +832,24 @@ def extract_and_store_facts(message: str) -> bool:
 
     return found
 
-
 def store_memory(user_input: str, action: str, output: str, metadata: dict = None):
     _init_memory()
     doc_id = f"{int(time.time())}_{hashlib.md5(user_input.encode()).hexdigest()[:8]}"
-    doc    = f"User: {user_input}\nAction: {action}\nOutput: {output[:500]}"
+    doc = f"User: {user_input}\nAction: {action}\nOutput: {output[:500]}"
     # Change 6: duplicate guard – skip if a near-identical entry already exists
     try:
         if memory_collection.count() > 0:
             chk = memory_collection.query(
                 query_texts=[doc], n_results=1, include=["distances"])
             if (chk and chk["distances"] and chk["distances"][0] and
-                    chk["distances"][0][0] < MEMORY_DUPLICATE_THRESHOLD):
+                chk["distances"][0][0] < MEMORY_DUPLICATE_THRESHOLD):
                 return  # near-duplicate found, skip
     except Exception:
         pass
-    meta   = {"user_input": user_input, "action": action, "timestamp": time.time()}
+    meta = {"user_input": user_input, "action": action, "timestamp": time.time()}
     if metadata:
         meta.update(metadata)
     memory_collection.upsert(documents=[doc], metadatas=[meta], ids=[doc_id])
-
 
 def recall_memory(query: str, n_results: int = 3) -> list:
     _init_memory()
@@ -865,9 +872,10 @@ def recall_memory(query: str, n_results: int = 3) -> list:
     ]
 
 
-# ===========================================================================
+# =============================================================================
 # Plugin system
-# ===========================================================================
+# =============================================================================
+
 PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 os.makedirs(PLUGINS_DIR, exist_ok=True)
 _init = os.path.join(PLUGINS_DIR, "__init__.py")
@@ -876,17 +884,16 @@ if not os.path.exists(_init):
 
 _plugins: dict = {}
 
-
 def load_plugins():
     global _plugins
     _plugins = {}
     for fname in os.listdir(PLUGINS_DIR):
         if not fname.endswith(".py") or fname == "__init__.py":
             continue
-        mod_name  = fname[:-3]
+        mod_name = fname[:-3]
         file_path = os.path.join(PLUGINS_DIR, fname)
-        spec      = importlib.util.spec_from_file_location(mod_name, file_path)
-        module    = importlib.util.module_from_spec(spec)
+        spec = importlib.util.spec_from_file_location(mod_name, file_path)
+        module = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(module)
             if hasattr(module, "run") and callable(module.run):
@@ -894,7 +901,7 @@ def load_plugins():
                 if hasattr(module, "get_info") and callable(module.get_info):
                     info.update(module.get_info())
                 else:
-                    info["name"]        = mod_name.replace("_", " ").title()
+                    info["name"] = mod_name.replace("_", " ").title()
                     info["description"] = f"Plugin {mod_name}"
                 key = info["name"].lower().replace(" ", "_")
                 _plugins[key] = info
@@ -904,14 +911,11 @@ def load_plugins():
         except Exception as exc:
             print(f"[Plugin] Error loading {fname}: {exc}")
 
-
 load_plugins()
-
 
 def get_plugins_info():
     return {k: {"name": v.get("name", k), "description": v.get("description", "")}
             for k, v in _plugins.items()}
-
 
 def run_plugin(name: str, args: dict):
     if name not in _plugins:
@@ -922,26 +926,25 @@ def run_plugin(name: str, args: dict):
         return {"error": str(exc)}
 
 
-# ===========================================================================
+# =============================================================================
 # Helpers
-# ===========================================================================
+# =============================================================================
+
 def clean_html(raw: str) -> str:
     raw = re.sub(r'^```[^\n]*\n?', '', raw)
     raw = re.sub(r'\n?```$', '', raw)
-    raw = raw.replace('```', '')
-    raw = re.sub(r'`html`', '', raw)
+    raw = raw.replace('📋 Copy', '')
+    raw = re.sub(r'```html', '', raw)
     return raw.strip()
-
 
 def save_file(content, filename: str) -> str:
     os.makedirs("data", exist_ok=True)
     path = os.path.join("data", filename)
     mode = "wb" if isinstance(content, bytes) else "w"
-    kw   = {} if isinstance(content, bytes) else {"encoding": "utf-8"}
+    kw = {} if isinstance(content, bytes) else {"encoding": "utf-8"}
     with open(path, mode, **kw) as f:
         f.write(content)
     return path
-
 
 def is_video_followup(message: str):
     """
@@ -950,24 +953,17 @@ def is_video_followup(message: str):
       "upgrade"  – user wants the full/longer version (optionally with explicit seconds)
       "retry"    – user wants a new draft at the same settings
       "confirm"  – user is happy; clear the session state
-
-    Upgrade detection order:
-      1. "make it <number>" regex  → catches "make it 5 seconds", "make it 10s", etc.
-      2. keyword startswith list   → catches "make it longer", "longer", "full version", etc.
-    This ensures "make a video of a dog" is NOT caught (starts with "make a", not "make it").
     """
     lower = message.lower().strip()
-
     # "make it 5 seconds" / "make it 10s" / "make it 3 sec" → upgrade
     if re.match(r'^make it\s+\d', lower):
         return "upgrade"
-
     upgrade_kws = ["make it longer", "make it", "longer", "full version", "make full",
-                   "upgrade", "longer version", "full video"]
+                  "upgrade", "longer version", "full video"]
     retry_kws   = ["try again", "regenerate", "another one", "another",
-                   "redo", "new draft", "different one"]
+                  "redo", "new draft", "different one"]
     confirm_kws = ["that's perfect", "thats perfect", "keep it", "perfect",
-                   "looks good", "love it", "great", "done"]
+                  "looks good", "love it", "great", "done"]
     if any(lower == kw or lower.startswith(kw) for kw in upgrade_kws):
         return "upgrade"
     if any(lower == kw or lower.startswith(kw) for kw in retry_kws):
@@ -976,25 +972,22 @@ def is_video_followup(message: str):
         return "confirm"
     return None
 
-
 def extract_video_duration(message: str) -> int:
     """
     Parse an explicit duration from the user's request, e.g. "make a 10 second video".
     Handles both singular ("second") and plural ("seconds").
     Returns an int clamped to 1–15, defaulting to 3 if nothing found.
     """
-    m = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', message.lower())
+    m = re.search(r'(\d+)\s(?:seconds?|sec|s)\b', message.lower())
     if m:
         return max(1, min(15, int(m.group(1))))
     return 3
 
-
 _VIDEO_FOLLOWUP_MSG = (
-    "\n\n💬 **What next?**  "
-    "· **make it longer** (or say a length, e.g. *'make it 10 seconds'*)  "
-    "· **try again** (new draft, ~$0.15)  "
-    "· **that's perfect** to keep it"
-)
+    "\n\n💬 What next?  "
+    "· make it longer (or say a length, e.g. 'make it 10 seconds')  "
+    "· try again (new draft, ~$0.15)  "
+    "· that's perfect to keep it")
 
 # Appended to the prompt only for image-to-video (image_b64 is not None).
 # Encourages the model to keep the product physically consistent across frames.
@@ -1003,9 +996,7 @@ _IMG2VID_CONSISTENCY = (
     " color, and design throughout the entire video. Do not morph, transform,"
     " or change the object into anything else. Keep it physically consistent"
     " and stable from the first frame to the last. Camera movement and"
-    " background may change, but the product itself stays identical."
-)
-
+    " background may change, but the product itself stays identical.")
 
 def is_video_request(message: str) -> bool:
     keywords = [
@@ -1016,7 +1007,6 @@ def is_video_request(message: str) -> bool:
         "create an animation", "create animation",
     ]
     return any(kw in message.lower() for kw in keywords)
-
 
 def is_image_request(message: str) -> bool:
     keywords = [
@@ -1031,7 +1021,6 @@ def is_image_request(message: str) -> bool:
     lower = message.lower()
     return any(kw in lower for kw in keywords)
 
-
 def _extract_html(text: str):
     """Return the first complete HTML document found in text, or None."""
     m = re.search(r'<!DOCTYPE\s+html[^>]*>.*?</html>', text, re.DOTALL | re.IGNORECASE)
@@ -1040,9 +1029,10 @@ def _extract_html(text: str):
     return m.group(0) if m else None
 
 
-# ===========================================================================
+# =============================================================================
 # Core tools
-# ===========================================================================
+# =============================================================================
+
 def generate_website(task, filename, style_guide, model=None):
     model    = sanitize_model(model or DEFAULT_TEXT_MODEL)
     memories = recall_memory("website " + task, n_results=2)
@@ -1058,12 +1048,11 @@ def generate_website(task, filename, style_guide, model=None):
     response, token_info = ask_openrouter(prompt, model=model)
     html = _extract_html(clean_html(response))
     if html:
-        safe = re.sub(r'[\\/*?:"<>|]', "", filename)
+        safe = re.sub(r'[\\/?:"<>|]', "", filename)
         path = save_file(html, f"{safe}_{time.strftime('%Y%m%d_%H%M%S')}.html")
         store_memory(task, "website_generation", html)
         return {"html": html, "path": path, "error": None}, token_info
     return {"error": "Could not extract valid HTML", "raw": response}, token_info
-
 
 def refine_html(original_html, instruction, model=None):
     model    = sanitize_model(model or DEFAULT_TEXT_MODEL)
@@ -1079,14 +1068,13 @@ def refine_html(original_html, instruction, model=None):
         path = save_file(html, f"refined_{time.strftime('%Y%m%d_%H%M%S')}.html")
         store_memory(instruction, "html_refinement", html)
         return {"new_html": html, "path": path, "error": None}, token_info
-    # FIX #5 – was `raw: refined` (undefined variable)
+    # FIX #5 – was raw: refined (undefined variable)
     return {"error": "OpenRouter did not return valid HTML", "raw": response}, token_info
-
 
 def convert_code_to_html(code, model=None):
     model  = sanitize_model(model or DEFAULT_TEXT_MODEL)
     prompt = (
-        f"You are a helpful assistant.\nCode:\n```{code}```\n\n"
+        f"You are a helpful assistant.\nCode:\n```\n{code}\n```\n\n"
         "Create a complete standalone HTML page that displays this code "
         "syntax-highlighted and explains what it does.\n"
         "Output ONLY raw HTML starting with <!DOCTYPE html>. No backticks."
@@ -1099,11 +1087,10 @@ def convert_code_to_html(code, model=None):
         return {"html": html, "path": path, "error": None}, token_info
     return {"error": "Failed to generate valid HTML", "raw": response}, token_info
 
-
 def refine_code(code, instruction, model=None):
     model  = sanitize_model(model or DEFAULT_TEXT_MODEL)
     prompt = (
-        f"You are an expert programmer.\nCode:\n```{code}```\n\n"
+        f"You are an expert programmer.\nCode:\n```\n{code}\n```\n\n"
         f"The user wants: {instruction}\n"
         "Output ONLY the refined code, no explanations, no backticks."
     )
@@ -1112,7 +1099,6 @@ def refine_code(code, instruction, model=None):
     refined = re.sub(r'\n?```$', '', refined).strip()
     store_memory(instruction, "code_refinement", refined)
     return {"refined_code": refined, "error": None}, token_info
-
 
 def web_search_ddg(query: str):
     """DuckDuckGo search – renamed to avoid shadowing the Flask /search route."""
@@ -1128,7 +1114,6 @@ def web_search_ddg(query: str):
     except Exception as exc:
         return {"error": str(exc)}, None
 
-
 def generate_app(description, language, filename_base, model=None):
     model    = sanitize_model(model or DEFAULT_TEXT_MODEL)
     lang_ext = {"python": ".py", "powershell": ".ps1", "bash": ".sh", "batch": ".bat"}
@@ -1141,28 +1126,24 @@ def generate_app(description, language, filename_base, model=None):
     code, token_info = ask_openrouter(prompt, model=model)
     code = re.sub(r'^```[^\n]*\n?', '', code)
     code = re.sub(r'\n?```$', '', code).strip()
-    base = (re.sub(r'[\\/*?:"<>|]', "", filename_base) if filename_base
+    base = (re.sub(r'[\\/\n?:"<>|]', "", filename_base) if filename_base
             else "_".join(re.findall(r'\b\w+\b', description.lower())[:3]) or "app")
     path = save_file(code, f"{base}{ext}")
     store_memory(description, "app_generation", code)
     return {"code": code, "path": path, "error": None}, token_info
 
-
 def clone_website(url, output_dir, progress_callback=None):
     clone_root   = os.path.join("data", output_dir)
     os.makedirs(clone_root, exist_ok=True)
     url_to_local = {}
-
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page    = browser.new_context().new_page()
-
         if progress_callback:
             progress_callback("Loading page…")
         page.goto(url, wait_until="networkidle", timeout=180_000)
         page.wait_for_timeout(2000)
         html = page.content()
-
         if progress_callback:
             progress_callback("Collecting assets…")
         asset_urls = page.evaluate("""() => {
@@ -1174,7 +1155,6 @@ def clone_website(url, output_dir, progress_callback=None):
             document.querySelectorAll('link[rel=preload]').forEach(e => e.href && s.add(e.href));
             return [...s];
         }""")
-
         total = len(asset_urls)
         for idx, asset_url in enumerate(asset_urls):
             if progress_callback:
@@ -1200,7 +1180,6 @@ def clone_website(url, output_dir, progress_callback=None):
                         local_path, clone_root).replace("\\", "/")
             except Exception as exc:
                 print(f"[clone] Failed {full_url}: {exc}")
-
         if progress_callback:
             progress_callback("Rewriting paths…")
         for orig, local in url_to_local.items():
@@ -1209,19 +1188,17 @@ def clone_website(url, output_dir, progress_callback=None):
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(html)
         browser.close()
-
     store_memory(url, "website_clone", f"Cloned to {clone_root}")
     return index_path, clone_root
 
 
-# ===========================================================================
+# =============================================================================
 # Flask routes
-# ===========================================================================
+# =============================================================================
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/health")
 def health():
@@ -1235,22 +1212,18 @@ def health():
         "default_text_model": DEFAULT_TEXT_MODEL,
     })
 
-
 @app.route("/models")
 def list_models():
     return jsonify({"models": sorted(VALID_MODELS)})
-
 
 @app.route("/list_plugins")
 def list_plugins():
     return jsonify({"plugins": get_plugins_info()})
 
-
 @app.route("/run_plugin", methods=["POST"])
 def run_plugin_endpoint():
     d = request.get_json()
     return jsonify(run_plugin(d.get("plugin"), d.get("args", {})))
-
 
 @app.route("/generate", methods=["POST"])
 def route_generate():
@@ -1262,7 +1235,6 @@ def route_generate():
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"html": res["html"], "path": res["path"], "token_info": ti})
 
-
 @app.route("/refine", methods=["POST"])
 def route_refine():
     d = request.get_json()
@@ -1273,7 +1245,6 @@ def route_refine():
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"new_html": res["new_html"], "path": res["path"], "token_info": ti})
 
-
 @app.route("/convert_code", methods=["POST"])
 def route_convert_code():
     d = request.get_json()
@@ -1282,7 +1253,6 @@ def route_convert_code():
     if res.get("error"):
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"html": res["html"], "path": res["path"], "token_info": ti})
-
 
 @app.route("/refine_code", methods=["POST"])
 def route_refine_code():
@@ -1294,7 +1264,6 @@ def route_refine_code():
         return jsonify({"error": res["error"], "raw": res.get("raw")})
     return jsonify({"refined_code": res["refined_code"], "token_info": ti})
 
-
 @app.route("/search", methods=["POST"])
 def route_search():
     d = request.get_json()
@@ -1302,7 +1271,6 @@ def route_search():
     if res.get("error"):
         return jsonify({"error": res["error"]})
     return jsonify({"results": res["results"]})
-
 
 @app.route("/generate_app", methods=["POST"])
 def route_generate_app():
@@ -1314,13 +1282,11 @@ def route_generate_app():
         return jsonify({"error": res["error"]})
     return jsonify({"code": res["code"], "path": res["path"], "token_info": ti})
 
-
 @app.route("/chat", methods=["POST"])
 def route_chat():
     d       = request.get_json()
     message = d.get("message", "")
     model   = sanitize_model(d.get("model", DEFAULT_TEXT_MODEL))
-
     vsid = _vid_sid()   # ensure vid_sid is in the cookie before any return
 
     # ── Video follow-up commands (BEFORE new video check) ────────────
@@ -1329,19 +1295,16 @@ def route_chat():
         last = _video_sessions.get(vsid)
         if not last:
             return jsonify({"reply": "No video in progress yet — send a video request first."})
-
         if followup == "confirm":
             _video_sessions.pop(vsid, None)
             return jsonify({"reply": "Glad you liked it! 🎉 The video has been saved."})
-
         if followup == "upgrade":
-            _m = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', message.lower())
+            _m = re.search(r'(\d+)\s(?:seconds?|sec|s)\b', message.lower())
             dur = max(1, min(15, int(_m.group(1)))) if _m else 8
             reply_prefix = f"🎬 Generating {dur}-second version…\n\n"
         else:  # retry
             dur = last.get("duration", 3)
             reply_prefix = "🎬 Generating a new draft…\n\n"
-
         _ar      = last.get("aspect_ratio", "16:9")
         _img_b64 = last.get("image_b64")
         path, err = generate_video_with_openrouter(
@@ -1390,12 +1353,11 @@ def route_chat():
     profile_ctx = get_profile_context()
     relevant    = recall_memory(message, n_results=5)
     mem_block   = ("Relevant context:\n" +
-                   "\n".join(f"• {m}" for m in relevant) + "\n\n") if relevant else ""
+                  "\n".join(f"• {m}" for m in relevant) + "\n\n") if relevant else ""
 
     if "conv_history" not in session:
         session["conv_history"] = []
     history = session["conv_history"]
-
     prompt  = _CHAT_SYSTEM + "\n"
     prompt += profile_ctx
     prompt += mem_block
@@ -1404,19 +1366,19 @@ def route_chat():
     prompt += f"User: {message}\nAssistant:"
 
     reply, token_info = ask_openrouter(prompt, model=model, use_cache=False)
+
     # Change 3: no longer store every chat reply as a memory (low-value noise).
     # explicit "remember that X" is already stored by extract_and_store_facts.
     history.append({"role": "user",      "content": message})
     history.append({"role": "assistant", "content": reply})
     session["conv_history"] = history[-20:]
-    return jsonify({"reply": reply, "token_info": token_info})
 
+    return jsonify({"reply": reply, "token_info": token_info})
 
 @app.route("/clear_chat", methods=["POST"])
 def clear_chat():
     session.pop("conv_history", None)
     return jsonify({"status": "cleared"})
-
 
 @app.route("/clone", methods=["POST"])
 def route_clone():
@@ -1433,7 +1395,6 @@ def route_clone():
     except Exception as exc:
         return jsonify({"error": str(exc)})
 
-
 @app.route("/preview/<folder>/<path:filename>")
 def serve_clone(folder, filename):
     p = os.path.join("data", folder)
@@ -1442,7 +1403,6 @@ def serve_clone(folder, filename):
     if ".." in filename or filename.startswith("/"):
         return "Invalid path", 400
     return send_from_directory(p, filename)
-
 
 @app.route("/gemini_image", methods=["POST"])
 def route_gemini_image():
@@ -1456,16 +1416,15 @@ def route_gemini_image():
         return jsonify({"error": err})
     return jsonify({"path": path, "status": "success"})
 
-
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # POST /generate_video
 # Accepts JSON: { "prompt": str, "image": "<base64 data URL or null>",
-#                 "duration": int (optional), "resolution": str (optional) }
+#                "duration": int (optional), "resolution": str (optional) }
 # Used by the frontend for image-to-video (base64 can't ride in a GET URL).
 # Also works for text-only video when "image" is absent/null.
-# ---------------------------------------------------------------------------
-_MAX_IMAGE_B64_BYTES = 8 * 1024 * 1024   # 8 MB raw base64 limit
+# -----------------------------------------------------------------------------
 
+_MAX_IMAGE_B64_BYTES = 8 * 1024 * 1024   # 8 MB raw base64 limit
 
 @app.route("/generate_video", methods=["POST"])
 def route_generate_video():
@@ -1488,6 +1447,7 @@ def route_generate_video():
     path, err = generate_video_with_openrouter(
         prompt, duration=dur, resolution=resolution,
         aspect_ratio=aspect_ratio, image_b64=image_b64)
+
     if err:
         return jsonify({"error": err}), 500
 
@@ -1511,11 +1471,9 @@ def route_generate_video():
         "status":    "success",
     })
 
-
 @app.route("/get_profile")
 def get_profile():
     return jsonify({"profile": load_user_profile()})
-
 
 @app.route("/update_profile", methods=["POST"])
 def route_update_profile():
@@ -1527,20 +1485,18 @@ def route_update_profile():
     update_user_profile(key, value)
     return jsonify({"status": "ok", "profile": load_user_profile()})
 
-
 @app.route("/clear_profile", methods=["POST"])
 def route_clear_profile():
     save_user_profile({})
     return jsonify({"status": "cleared"})
-
 
 @app.route("/list_memories")
 def list_memories():
     search  = request.args.get("search", "")
     limit   = int(request.args.get("limit", 50))
     results = (memory_collection.query(query_texts=[search], n_results=limit)
-               if search else
-               memory_collection.query(query_texts=["a"], n_results=limit))
+              if search else
+              memory_collection.query(query_texts=["a"], n_results=limit))
     mems = []
     if results and results["ids"] and results["ids"][0]:
         for i, doc_id in enumerate(results["ids"][0]):
@@ -1550,7 +1506,6 @@ def list_memories():
                 "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
             })
     return jsonify({"memories": mems})
-
 
 @app.route("/delete_memory", methods=["POST"])
 def delete_memory():
@@ -1562,7 +1517,6 @@ def delete_memory():
         return jsonify({"status": "success"})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-
 
 @app.route("/compress_memory", methods=["POST"])
 def compress_memory():
@@ -1580,7 +1534,7 @@ def compress_memory():
         ]
         now     = time.time()
         old     = sorted([m for m in all_mems if (now - m["timestamp"]) > days_old * 86400],
-                         key=lambda x: x["timestamp"])
+                        key=lambda x: x["timestamp"])
         if not old:
             return jsonify({"message": f"No memories older than {days_old} days."})
         batch = old[:max_mems]
@@ -1591,28 +1545,24 @@ def compress_memory():
             use_cache=False)
         summary = summary.strip()[:500]
         store_memory("memory_compression", "memory_summary", summary,
-                     {"compressed": True, "original_count": len(batch)})
+                    {"compressed": True, "original_count": len(batch)})
         memory_collection.delete(ids=[m["id"] for m in batch])
         return jsonify({"message": f"Compressed {len(batch)} memories.",
-                        "summary": summary, "deleted_count": len(batch)})
+                       "summary": summary, "deleted_count": len(batch)})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-
 
 @app.route("/backup_memory", methods=["POST"])
 def backup_memory():
     return jsonify({"error": "Backup not available in cloud version"}), 501
 
-
 @app.route("/restore_memory", methods=["POST"])
 def restore_memory():
     return jsonify({"error": "Restore not available in cloud version"}), 501
 
-
 @app.route("/open_file_cleaner", methods=["POST"])
 def open_file_cleaner():
     return jsonify({"error": "File cleaner not available in cloud version"})
-
 
 @app.route("/autocomplete")
 def autocomplete():
@@ -1627,11 +1577,10 @@ def autocomplete():
     for info in get_plugins_info().values():
         suggestions.add(info["name"])
     for cmd in ["generate website", "refine html", "convert code to html", "refine code",
-                "search web", "generate app", "clone website", "send email"]:
+               "search web", "generate app", "clone website", "send email"]:
         if prefix.lower() in cmd:
             suggestions.add(cmd)
     return jsonify({"suggestions": sorted(suggestions)[:10]})
-
 
 @app.route("/system_stats")
 def system_stats():
@@ -1646,8 +1595,8 @@ def system_stats():
             if r.returncode == 0:
                 gu, mu, mt = r.stdout.strip().split(", ")
                 gpu = {"gpu_percent": int(gu),
-                       "gpu_mem_used_gb": float(mu)/1024,
-                       "gpu_mem_total_gb": float(mt)/1024}
+                      "gpu_mem_used_gb": float(mu)/1024,
+                      "gpu_mem_total_gb": float(mt)/1024}
         except Exception:
             pass
     return jsonify({
@@ -1658,15 +1607,15 @@ def system_stats():
         "gpu":          gpu,
     })
 
-
 @app.route("/favicon.ico")
 def favicon():
     return "", 204
 
 
-# ===========================================================================
+# =============================================================================
 # Streaming smart agent  (with fallback chain + robust JSON parsing)
-# ===========================================================================
+# =============================================================================
+
 @app.route("/stream_smart_agent")
 def stream_smart_agent():
     request_text = request.args.get("request", "")
@@ -1698,7 +1647,7 @@ def stream_smart_agent():
                 else:
                     video_url    = f"/{path.replace(os.sep, '/')}"
                     video_result = (f"{dur}-second draft (~${cost})!\n\n"
-                                   f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
+                                  f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
                     _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
                     store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
                     yield f"data: {json.dumps({'result': video_result, 'path': path, 'tool': 'video_generation'})}\n\n"
@@ -1713,15 +1662,13 @@ def stream_smart_agent():
                 yield f"data: {json.dumps({'result': 'No video in progress yet — send a video request first.', 'tool': 'video_followup'})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
-
             if followup == "confirm":
                 _video_sessions.pop(_vsid, None)
                 yield f"data: {json.dumps({'result': 'Glad you liked it! 🎉 The video has been saved.', 'tool': 'video_followup'})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
-
             if followup == "upgrade":
-                _m  = re.search(r'(\d+)\s*(?:seconds?|sec|s)\b', request_text.lower())
+                _m  = re.search(r'(\d+)\s(?:seconds?|sec|s)\b', request_text.lower())
                 dur = max(1, min(15, int(_m.group(1)))) if _m else 8
             else:
                 dur = last.get("duration", 3)
@@ -1781,7 +1728,7 @@ def stream_smart_agent():
 
         # ── Email plugin ───────────────────────────────────────────────
         if any(kw in request_text.lower() for kw in
-               ["send an email", "send email", "email to", "mail to"]):
+              ["send an email", "send email", "email to", "mail to"]):
             args = {"to": "recipient@example.com"}
             em   = re.search(r'[\w\.-]+@[\w\.-]+', request_text)
             if em:
@@ -1795,7 +1742,7 @@ def stream_smart_agent():
 
         # ── Screenshot plugin ──────────────────────────────────────────
         if any(kw in request_text.lower() for kw in
-               ["screenshot", "take a screenshot", "capture screenshot"]):
+              ["screenshot", "take a screenshot", "capture screenshot"]):
             um = re.search(r'(https?://[^\s]+)', request_text)
             if not um:
                 yield f"data: {json.dumps({'error': 'No URL found for screenshot'})}\n\n"
@@ -1814,15 +1761,13 @@ def stream_smart_agent():
         profile_ctx  = get_profile_context()
         plugins_text = (
             "\n".join(f"- plugin_{k}: {v['description']}"
-                      for k, v in get_plugins_info().items())
+                     for k, v in get_plugins_info().items())
             or "No plugins available."
         )
-
         decision_prompt = f"""You are a routing assistant. Pick the right tool for the user's request.
-
-{profile_ctx}Recent memory:
+{profile_ctx}
+Recent memory:
 {mem_ctx}
-
 Available tools — choose EXACTLY one (or an ordered array for multi-step):
 - website: USE when asked to build/create/generate a webpage, site, landing page, or HTML. Args: task, filename (optional)
 - app_gen: USE when asked to write a script, program, or code file. Args: description, language (python|powershell|bash|batch), filename (optional)
@@ -1833,16 +1778,13 @@ Available tools — choose EXACTLY one (or an ordered array for multi-step):
 - refine_code: USE when asked to modify existing code. Args: code, instruction
 - code_to_html: USE when asked to convert code into an HTML page. Args: code
 - chat: USE for everything else — questions, explanations, conversation, opinions, general knowledge. Args: message
-
 Plugins:
 {plugins_text}
-
 Rules:
 1. Respond with ONLY valid JSON — no prose, no markdown, no backticks.
 2. Format: {{"tool": "...", "arguments": {{...}}}} or an array for multi-step.
 3. When in doubt, use "chat".
 4. Never use "search" for image, video, or creative requests.
-
 User request: "{request_text}"
 Style guide: {style_guide}
 """
@@ -1884,8 +1826,8 @@ Style guide: {style_guide}
             decisions = decisions[:MAX_CHAIN_STEPS]
             yield f"data: {json.dumps({'warning': f'Chain capped at {MAX_CHAIN_STEPS} steps.'})}\n\n"
 
-        is_chain    = len(decisions) > 1
-        step_results = []   # Step A: [{tool, summary, label}]
+        is_chain = len(decisions) > 1
+        step_results = []  # Step A: [{tool, summary, label}]
 
         def _prev_ctx():
             """Step B: build forwarding context block from completed steps."""
@@ -1901,7 +1843,7 @@ Style guide: {style_guide}
             tool = action.get("tool", "")
             args = action.get("arguments", {})
             yield f"data: {json.dumps({'step_start': tool, 'step_index': step_idx})}\n\n"
-            err_flag    = False
+            err_flag = False
             step_summary = ""
 
             try:
@@ -1911,15 +1853,15 @@ Style guide: {style_guide}
                     # facts + memories already fetched in routing phase; reuse to avoid
                     # a second ChromaDB embedding call on the same request text
                     profile_ctx = get_profile_context()
-                    mem         = memories[:3]   # routing fetched n_results=5; we need 3
-                    mem_block   = ("Relevant context:\n" +
-                                   "\n".join(f"• {m}" for m in mem) + "\n\n") if mem else ""
-                    prompt  = _CHAT_SYSTEM + "\n"
+                    mem = memories[:3]  # routing fetched n_results=5; we need 3
+                    mem_block = ("Relevant context:\n" +
+                               "\n".join(f"• {m}" for m in mem) + "\n\n") if mem else ""
+                    prompt = _CHAT_SYSTEM + "\n"
                     prompt += profile_ctx
-                    prompt += _prev_ctx()   # Step B: inject prior results
+                    prompt += _prev_ctx()  # Step B: inject prior results
                     prompt += mem_block
                     prompt += f"User: {msg}\nAssistant:"
-                    chat_buf = []           # Step F: capture reply for forwarding
+                    chat_buf = []  # Step F: capture reply for forwarding
                     for chunk in ask_openrouter_stream(prompt, model=model):
                         yield chunk
                         if chunk.startswith("data: "):
@@ -1957,16 +1899,16 @@ Style guide: {style_guide}
                         err_flag = True
                         yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
-                # ── plugin_* ───────────────────────────────────────────
+                # ── plugin_ ───────────────────────────────────────────
                 elif tool.startswith("plugin_"):
                     pname = tool[7:]
-                    res   = run_plugin(pname, args)
-                    key   = "error" if "error" in res else "result"
+                    res = run_plugin(pname, args)
+                    key = "error" if "error" in res else "result"
                     if key == "error":
                         err_flag = True
                     else:
                         step_summary = str(res.get("result", ""))[:400]
-                    yield f"data: {json.dumps({key: res[key], 'tool': tool})}\n\n"
+                        yield f"data: {json.dumps({key: res[key], 'tool': tool})}\n\n"
 
                 # ── website ────────────────────────────────────────────
                 elif tool == "website":
@@ -2035,7 +1977,7 @@ Style guide: {style_guide}
                 elif tool == "image_generation":
                     if is_chain:
                         yield f"data: {json.dumps({'cost_notice': 'Image generation uses credits (~$0.01–0.04).', 'tool': 'image_generation'})}\n\n"
-                    prev       = _prev_ctx()
+                    prev = _prev_ctx()
                     img_prompt = args.get("prompt", request_text)
                     if prev:
                         img_prompt = img_prompt + "\n\nAdditional context: " + prev.strip()
@@ -2046,7 +1988,7 @@ Style guide: {style_guide}
                         err_flag = True
                         yield f"data: {json.dumps({'error': err})}\n\n"
                     else:
-                        img_url    = f"/{path.replace(os.sep, '/')}"
+                        img_url = f"/{path.replace(os.sep, '/')}"
                         img_result = "Image generated!\n![Generated Image](" + img_url + ")"
                         step_summary = f"Image at {img_url}"
                         yield f"data: {json.dumps({'result': img_result, 'path': path, 'tool': 'image_generation'})}\n\n"
@@ -2054,9 +1996,9 @@ Style guide: {style_guide}
                 # ── video_generation ───────────────────────────────────
                 elif tool == "video_generation":
                     vid_prompt = args.get("prompt", request_text)
-                    dur        = extract_video_duration(vid_prompt)
-                    cost_lo    = round(dur * 0.03, 2)
-                    cost_hi    = round(dur * 0.08, 2)
+                    dur = extract_video_duration(vid_prompt)
+                    cost_lo = round(dur * 0.03, 2)
+                    cost_hi = round(dur * 0.08, 2)
 
                     if is_chain:
                         # Cost safety: stop chain, store pending plan, ask user
@@ -2064,18 +2006,18 @@ Style guide: {style_guide}
                         if prev:
                             vid_prompt = vid_prompt + "\n\nContext: " + prev.strip()
                         _video_sessions[_vsid] = {
-                            "prompt":        vid_prompt,
-                            "duration":      dur,
-                            "resolution":    "480p",
+                            "prompt": vid_prompt,
+                            "duration": dur,
+                            "resolution": "480p",
                             "pending_chain": True,
                         }
                         stop_msg = (
                             f"The next step would generate a {dur}-second video "
                             f"(~${cost_lo}–${cost_hi}). "
-                            f"Reply **'yes make the video'** to proceed, or ignore to skip."
+                            f"Reply 'yes make the video' to proceed, or ignore to skip."
                         )
                         yield f"data: {json.dumps({'result': stop_msg, 'tool': 'video_pending'})}\n\n"
-                        break   # end chain gracefully — don't set err_flag
+                        break  # end chain gracefully — don't set err_flag
                     else:
                         # Single step: unchanged behaviour
                         cost = round(dur * 0.05, 2)
@@ -2085,9 +2027,9 @@ Style guide: {style_guide}
                             err_flag = True
                             yield f"data: {json.dumps({'error': err})}\n\n"
                         else:
-                            video_url    = f"/{path.replace(os.sep, '/')}"
+                            video_url = f"/{path.replace(os.sep, '/')}"
                             video_result = (f"{dur}-second draft (~${cost})!\n\n"
-                                            f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
+                                          f"![Generated Video]({video_url})" + _VIDEO_FOLLOWUP_MSG)
                             _video_sessions[_vsid] = {"prompt": vid_prompt, "duration": dur, "resolution": "480p"}
                             store_memory(vid_prompt, "video_generation", f"Generated video at {path}")
                             _vp = json.dumps({"result": video_result, "path": path, "tool": "video_generation"})
@@ -2095,9 +2037,9 @@ Style guide: {style_guide}
 
                 else:
                     # Unknown tool → fall back to chat, never error
-                    msg   = request_text
-                    mem   = recall_memory(msg, n_results=3)
-                    fb_p  = _CHAT_SYSTEM + "\n"
+                    msg = request_text
+                    mem = recall_memory(msg, n_results=3)
+                    fb_p = _CHAT_SYSTEM + "\n"
                     fb_p += ("Memory:\n" + "\n".join(mem) + "\n\n" if mem else "")
                     fb_p += f"User: {msg}\nAssistant:"
                     chat_buf = []
@@ -2119,9 +2061,9 @@ Style guide: {style_guide}
             # Step A: record result for forwarding (only on success)
             if not err_flag and step_summary:
                 step_results.append({
-                    "tool":    tool,
+                    "tool": tool,
                     "summary": step_summary,
-                    "label":   _TOOL_LABELS.get(tool, tool),
+                    "label": _TOOL_LABELS.get(tool, tool),
                 })
 
             if err_flag:
@@ -2140,17 +2082,18 @@ Style guide: {style_guide}
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
 
-# ===========================================================================
+# =============================================================================
 # Entry point
-# ===========================================================================
+# =============================================================================
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"\n{'='*62}")
-    print(f"  AI Studio - Cloud Edition  |  v2.0  |  27 May 2026")
-    print(f"  API key set : {'Yes' if OPENROUTER_API_KEY else 'No - set OPENROUTER_API_KEY'}")
-    print(f"  Text chain  : {' -> '.join(FREE_TEXT_MODELS)}")
-    print(f"  Image chain : {' -> '.join(IMAGE_MODELS)}")
-    print(f"  Port        : {port}")
+    print(f" AI Studio - Cloud Edition | v2.1 | 07 June 2026")
+    print(f" API key set : {'Yes' if OPENROUTER_API_KEY else 'No - set OPENROUTER_API_KEY'}")
+    print(f" Default model: {DEFAULT_TEXT_MODEL} (Laguna M.1)")
+    print(f" Text chain   : {' -> '.join(FREE_TEXT_MODELS)}")
+    print(f" Image chain  : {' -> '.join(IMAGE_MODELS)}")
+    print(f" Port         : {port}")
     print(f"{'='*62}\n")
     app.run(debug=False, host="0.0.0.0", port=port)
-
