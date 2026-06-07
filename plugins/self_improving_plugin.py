@@ -2,9 +2,7 @@ import os
 import json
 import time
 
-LOG_FILE = os.path.join(os.environ["USERPROFILE"], ".qwen_self_improvement.json")
-
-def load_lessons():
+LOG_FILE = os.path.join(os.path.expanduser("~"), ".qwen_self_improvement.json")def load_lessons():
     if os.path.exists(LOG_FILE):
         with open(LOG_FILE, "r") as f:
             return json.load(f)

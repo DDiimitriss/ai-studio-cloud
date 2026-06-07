@@ -1,0 +1,8 @@
+Flask
+requests
+chromadb
+duckduckgo-search
+playwright
+psutil
+moviepy
+python-pptx
