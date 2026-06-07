@@ -509,23 +509,23 @@ async function sendMessage() {
         return;
       }
       if (d.done) {
-        if (aiText) {
-          chatHistory.push({ role: 'assistant', content: aiText });
-          if (d.model_used) {
-            if (!_streamMsgEl) {
-              _streamMsgEl = createMsgEl('ai', '');
-              document.getElementById('messages').appendChild(_streamMsgEl);
-            }
-            const lbl = document.createElement('div'); 
-            lbl.className = 'msg-model-label'; 
-            lbl.textContent = '🧠 via ' + shortModelName(d.model_used);
-            const body = _streamMsgEl.querySelector('.msg-body'); 
-            if (body) body.appendChild(lbl);
-            scrollBottom();
-          }
-        } else if (!stepsDiv) { removeTyping(typingId); addMsg('ai', 'Done.'); }
-        doneGenerating(es);
-      }
+  if (aiText) {
+    chatHistory.push({ role: 'assistant', content: aiText });
+    // ALWAYS show the model label
+    if (!_streamMsgEl) {
+      _streamMsgEl = createMsgEl('ai', '');
+      document.getElementById('messages').appendChild(_streamMsgEl);
+    }
+    const modelUsed = d.model_used || getModel(); // Fallback to dropdown model
+    const lbl = document.createElement('div'); 
+    lbl.className = 'msg-model-label'; 
+    lbl.textContent = '🧠 via ' + shortModelName(modelUsed);
+    const body = _streamMsgEl.querySelector('.msg-body'); 
+    if (body) body.appendChild(lbl);
+    scrollBottom();
+  } else if (!stepsDiv) { removeTyping(typingId); addMsg('ai', 'Done.'); }
+  doneGenerating(es);
+}
     };
     es.onerror = () => { removeTyping(typingId); if (isGenerating) addMsg('ai', '️ Connection lost. Please try again.'); doneGenerating(es); };
   } catch(err) { removeTyping(typingId); addMsg('ai', `❌ Error: ${err.message}`); doneGenerating(null); }
