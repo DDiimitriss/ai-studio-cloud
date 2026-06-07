@@ -1,46 +1,80 @@
 import os
-import requests
-from moviepy.editor import ImageClip, concatenate_videoclips
-from moviepy.video.fx import fadein, fadeout
-
-def run(args):
-    image_urls = args.get("image_urls", [])
-    output_name = args.get("output_name", "generated_video")
-    duration_per_image = int(args.get("duration", 3))
-    desktop = os.path.join(os.environ["USERPROFILE"], "Desktop")
-
-    if not image_urls:
-        return "Error: No image URLs provided."
-
-    clips = []
-    for idx, url in enumerate(image_urls):
-        try:
-            resp = requests.get(url, timeout=10)
-            if resp.status_code == 200:
-                temp_path = os.path.join(desktop, f"temp_{idx}.jpg")
-                with open(temp_path, "wb") as f:
-                    f.write(resp.content)
-                clip = ImageClip(temp_path).set_duration(duration_per_image)
-                clip = clip.fx(fadein, 0.5).fx(fadeout, 0.5)
-                clips.append(clip)
-        except Exception as e:
-            return f"Error downloading {url}: {e}"
-
-    if not clips:
-        return "No valid images downloaded."
-
-    final_clip = concatenate_videoclips(clips, method="compose")
-    output_path = os.path.join(desktop, f"{output_name}.mp4")
-    final_clip.write_videofile(output_path, fps=24, logger=None, verbose=False)
-    # Cleanup temp files
-    for i in range(len(image_urls)):
-        temp_path = os.path.join(desktop, f"temp_{i}.jpg")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    return f"Video saved to {output_path}"
+from moviepy import VideoFileClip, concatenate_videoclips, TextClip, CompositeVideoClip
 
 def get_info():
     return {
-        "name": "Video Generator",
-        "description": "Creates a slideshow video from image URLs. Arguments: 'image_urls' (list of image URLs), 'output_name' (name without .mp4), 'duration' (seconds per image, default 3). Use when user wants to create a video from pictures."
+        "name": "Video Gen",
+        "description": "Video editing plugin - concatenate clips, add text overlays, and process videos."
     }
+
+def run(args):
+    """Perform video operations using moviepy."""
+    action = args.get("action", "info")
+    
+    try:
+        if action == "info":
+            return "✅ Video Gen plugin ready. Actions: concat, add_text, info"
+        
+        elif action == "concat":
+            # Concatenate multiple video files
+            video_files = args.get("videos", [])
+            if not video_files:
+                return "❌ No video files provided"
+            
+            clips = []
+            for vf in video_files:
+                if os.path.exists(vf):
+                    clips.append(VideoFileClip(vf))
+                else:
+                    return f"❌ File not found: {vf}"
+            
+            if not clips:
+                return "❌ No valid video files found"
+            
+            final = concatenate_videoclips(clips)
+            output = args.get("output", "output_concat.mp4")
+            final.write_videofile(output, codec="libx264", audio_codec="aac")
+            
+            # Clean up
+            for clip in clips:
+                clip.close()
+            final.close()
+            
+            return f"✅ Concatenated {len(clips)} videos → {output}"
+        
+        elif action == "add_text":
+            # Add text overlay to a video
+            video_file = args.get("video")
+            text = args.get("text", "Hello World")
+            output = args.get("output", "output_text.mp4")
+            
+            if not video_file or not os.path.exists(video_file):
+                return f"❌ Video file not found: {video_file}"
+            
+            video = VideoFileClip(video_file)
+            
+            # Create text clip
+            txt_clip = TextClip(
+                text=text,
+                font_size=40,
+                color='white',
+                font="Arial",
+                stroke_color='black',
+                stroke_width=2
+            )
+            txt_clip = txt_clip.with_duration(video.duration).with_position('center')
+            
+            # Composite
+            final = CompositeVideoClip([video, txt_clip])
+            final.write_videofile(output, codec="libx264", audio_codec="aac")
+            
+            video.close()
+            final.close()
+            
+            return f"✅ Added text overlay → {output}"
+        
+        else:
+            return f"❌ Unknown action: {action}. Use 'concat', 'add_text', or 'info'."
+    
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
