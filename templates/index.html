@@ -45,29 +45,26 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .bar-fill.warn{background:var(--amber)}
 .bar-fill.danger{background:var(--red)}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-#topbar{height:60px;min-height:60px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px}
+#topbar{height:52px;min-height:52px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px}
 #toggle-sidebar{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;border-radius:6px;transition:color .15s}
 #toggle-sidebar:hover{color:var(--text)}
 #topbar-title{font-weight:800;font-size:15px;letter-spacing:-.3px;flex:1}
 
-/* MAKE DROPDOWN OBVIOUS */
+/* SMALLER DROPDOWN */
 #model-select {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: bold;
-    background: var(--accent);
-    color: #fff;
-    border: 2px solid var(--accent2);
-    padding: 8px 12px;
-    border-radius: 8px;
-    cursor: pointer;
-    max-width: 280px;
-    outline: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  max-width: 220px;
+  outline: none;
 }
-#model-select option {
-    background: var(--bg2);
-    color: var(--text);
-}
+#model-select option { background: var(--bg2); color: var(--text); }
 
 .topbar-btn{background:none;border:1px solid var(--border2);color:var(--muted);padding:5px 10px;border-radius:7px;font-family:var(--font-ui);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
 .topbar-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--accent)}
@@ -78,13 +75,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 #messages::-webkit-scrollbar{width:6px}
 #messages::-webkit-scrollbar-track{background:transparent}
 #messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
-.msg{display:flex;gap:14px;margin-bottom:22px;animation:fadeUp .25s ease}
+
+/* NARROWER SPACE BETWEEN MESSAGES */
+.msg{display:flex;gap:14px;margin-bottom:14px;animation:fadeUp .25s ease}
+
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-.msg-avatar{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;margin-top:2px}
+.msg-avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;margin-top:2px}
 .msg.user .msg-avatar{background:linear-gradient(135deg,var(--accent),var(--accent2))}
 .msg.ai .msg-avatar{background:var(--bg3);border:1px solid var(--border2)}
 .msg-body{flex:1;min-width:0}
-.msg-role{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
+
+/* SMALLER ROLE LABEL */
+.msg-role{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
+
 .msg-content{background:var(--ai-bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;line-height:1.7;font-size:15px;word-break:break-word}
 .msg.user .msg-content{background:var(--user-bg);border-color:var(--accent)20}
 .msg-content pre{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:0;overflow:hidden;margin:10px 0;position:relative}
@@ -112,24 +115,10 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
 .media-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
 .media-action-btn{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border2);color:var(--text);padding:7px 14px;border-radius:7px;font-family:var(--font-ui);font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;transition:all .15s}
 .media-action-btn:hover{background:var(--accent);border-color:var(--accent);color:#fff;text-decoration:none;transform:translateY(-1px)}
-.msg-actions{display:flex;gap:6px;margin-top:8px;opacity:0;transition:opacity .15s}
+.msg-actions{display:flex;gap:6px;margin-top:8px;opacity:0;transition:opacity .15s;flex-wrap:wrap;align-items:center}
 .msg:hover .msg-actions{opacity:1}
 .msg-action-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--font-ui);transition:all .15s;font-weight:600}
 .msg-action-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
-
-/* MAKE MODEL LABEL OBVIOUS */
-.msg-model-label {
-    font-size: 14px;
-    color: var(--accent);
-    font-weight: bold;
-    margin-top: 12px;
-    font-family: var(--font-mono);
-    padding: 8px 12px;
-    background: var(--bg3);
-    border-radius: 8px;
-    display: inline-block;
-    border: 1px solid var(--accent);
-}
 
 .typing-dots{display:flex;gap:4px;align-items:center;padding:8px 0}
 .typing-dots span{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:bounce .9s infinite}
@@ -245,7 +234,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
 <div id="app">
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-icon">🤖</div>
+      <div class="logo-icon"></div>
       <div>
         <div class="logo-text">AI Studio Pro</div>
         <div class="logo-ver">v2.1 · Cloud</div>
@@ -260,8 +249,8 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
     <button class="sidebar-btn" onclick="openTool('clone')" id="btn-clone"><span class="icon">📋</span> Clone Website</button>
     <button class="sidebar-btn" onclick="openTool('image')" id="btn-image"><span class="icon">🎨</span> Image Generation</button>
     <div class="sidebar-section">System</div>
-    <button class="sidebar-btn" onclick="openTool('memory')" id="btn-memory"><span class="icon"></span> Memory</button>
-    <button class="sidebar-btn" onclick="openTool('plugins')" id="btn-plugins"><span class="icon"></span> Plugins</button>
+    <button class="sidebar-btn" onclick="openTool('memory')" id="btn-memory"><span class="icon">🧠</span> Memory</button>
+    <button class="sidebar-btn" onclick="openTool('plugins')" id="btn-plugins"><span class="icon">🔌</span> Plugins</button>
     <button class="sidebar-btn" onclick="openTool('health')" id="btn-health"><span class="icon">❤️</span> Health Check</button>
     <div class="sidebar-section">Preferences</div>
     <button class="sidebar-btn" onclick="toggleTheme()"><span class="icon" id="theme-icon">☀️</span> Toggle Theme</button>
@@ -278,7 +267,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
       <button id="toggle-sidebar" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
       <div id="topbar-title">Chat</div>
       
-      <!-- OBVIOUS DROPDOWN -->
+      <!-- SMALLER DROPDOWN -->
       <select id="model-select" title="Select model"></select>
       
       <div style="position:relative">
@@ -371,7 +360,6 @@ async function loadModels() {
       sel.appendChild(o);
     });
     
-    // Force-add Laguna M.1 if it's not in the list
     if (!data.models.includes('poolside/laguna-m.1:free')) {
       const o = document.createElement('option');
       o.value = 'poolside/laguna-m.1:free';
@@ -379,12 +367,10 @@ async function loadModels() {
       sel.appendChild(o);
     }
 
-    // Default to Laguna M.1 as the big brain
     sel.value = 'poolside/laguna-m.1:free';
     
   } catch(e) { 
     console.warn('Could not load models', e); 
-    // Fallback if fetch fails
     const sel = document.getElementById('model-select');
     sel.innerHTML = '<option value="poolside/laguna-m.1:free">Laguna M.1 (free) — Agentic Beast</option>';
   }
@@ -480,11 +466,11 @@ async function sendMessage() {
       const d = JSON.parse(e.data);
       if (d.error) { removeTyping(typingId); addMsg('ai', `❌ ${d.error}`); doneGenerating(es); return; }
       if (d.warning) {
-        const w = document.createElement('div'); w.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 8px;margin-bottom:4px'; w.textContent = ' ' + d.warning;
+        const w = document.createElement('div'); w.style.cssText = 'font-size:11px;color:var(--muted);padding:2px 8px;margin-bottom:4px'; w.textContent = '⚠ ' + d.warning;
         (stepsDiv || document.getElementById('messages')).appendChild(w); scrollBottom(); return;
       }
       if (d.cost_notice) {
-        const cn = document.createElement('div'); cn.style.cssText = 'font-size:11px;color:#f59e0b;padding:2px 8px;margin-bottom:4px'; cn.textContent = '💳 ' + d.cost_notice;
+        const cn = document.createElement('div'); cn.style.cssText = 'font-size:11px;color:#f59e0b;padding:2px 8px;margin-bottom:4px'; cn.textContent = ' ' + d.cost_notice;
         (stepsDiv || document.getElementById('messages')).appendChild(cn); scrollBottom(); return;
       }
       if (d.chain_summary) {
@@ -509,25 +495,26 @@ async function sendMessage() {
         return;
       }
       if (d.done) {
-  if (aiText) {
-    chatHistory.push({ role: 'assistant', content: aiText });
-    // ALWAYS show the model label
-    if (!_streamMsgEl) {
-      _streamMsgEl = createMsgEl('ai', '');
-      document.getElementById('messages').appendChild(_streamMsgEl);
-    }
-    const modelUsed = d.model_used || getModel(); // Fallback to dropdown model
-    const lbl = document.createElement('div'); 
-    lbl.className = 'msg-model-label'; 
-    lbl.textContent = '🧠 via ' + shortModelName(modelUsed);
-    const body = _streamMsgEl.querySelector('.msg-body'); 
-    if (body) body.appendChild(lbl);
-    scrollBottom();
-  } else if (!stepsDiv) { removeTyping(typingId); addMsg('ai', 'Done.'); }
-  doneGenerating(es);
-}
+        if (aiText) {
+          chatHistory.push({ role: 'assistant', content: aiText });
+          // ALWAYS show the model label next to action buttons
+          if (!_streamMsgEl) {
+            _streamMsgEl = createMsgEl('ai', '');
+            document.getElementById('messages').appendChild(_streamMsgEl);
+          }
+          const modelUsed = d.model_used || getModel();
+          const lbl = document.createElement('button'); 
+          lbl.className = 'msg-action-btn';
+          lbl.style.cursor = 'default';
+          lbl.textContent = '🧠 ' + shortModelName(modelUsed);
+          const actions = _streamMsgEl.querySelector('.msg-actions'); 
+          if (actions) actions.appendChild(lbl);
+          scrollBottom();
+        } else if (!stepsDiv) { removeTyping(typingId); addMsg('ai', 'Done.'); }
+        doneGenerating(es);
+      }
     };
-    es.onerror = () => { removeTyping(typingId); if (isGenerating) addMsg('ai', '️ Connection lost. Please try again.'); doneGenerating(es); };
+    es.onerror = () => { removeTyping(typingId); if (isGenerating) addMsg('ai', '⚠️ Connection lost. Please try again.'); doneGenerating(es); };
   } catch(err) { removeTyping(typingId); addMsg('ai', `❌ Error: ${err.message}`); doneGenerating(null); }
 }
 
@@ -540,14 +527,18 @@ function doneGenerating(es) { if (es) es.close(); currentStream = null; isGenera
 function stopGeneration() { if (currentStream) { currentStream.close(); } doneGenerating(null); addMsg('ai', '⏹ Generation stopped.'); }
 
 function addMsg(role, text) { const el = createMsgEl(role, text); document.getElementById('messages').appendChild(el); scrollBottom(); return el; }
+
+// NEW AVATAR:  instead of 🤖
 function createMsgEl(role, text) {
   const div = document.createElement('div'); div.className = `msg ${role}`;
-  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)"> Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()">👁 Preview</button>' : ''}</div></div>`;
+  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🧠'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)">📋 Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()"> Preview</button>' : ''}</div></div>`;
   return div;
 }
+
+// NEW AVATAR: 🧠 instead of 🤖
 function addTyping() {
   const id = 'typing-' + Date.now(); const div = document.createElement('div'); div.className = 'msg ai'; div.id = id;
-  div.innerHTML = `<div class="msg-avatar">🤖</div><div class="msg-body"><div class="msg-role">AI Studio Pro</div><div class="msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>`;
+  div.innerHTML = `<div class="msg-avatar">🧠</div><div class="msg-body"><div class="msg-role">AI Studio Pro</div><div class="msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>`;
   document.getElementById('messages').appendChild(div); scrollBottom(); return id;
 }
 function removeTyping(id) { const el = document.getElementById(id); if (el) el.remove(); }
@@ -566,7 +557,7 @@ function renderMarkdown(text) {
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); h = h.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   h = h.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\)]+)\)/g, (_, alt, url) => {
     const filename = url.split('/').pop().split('?')[0] || 'media';
-    if (/\.mp4(\?|$)/i.test(url)) { return `<div class="generated-media-wrap"><video controls autoplay style="max-width:100%;border-radius:8px;background:#000"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download MP4</a><a href="${url}" target="_blank" class="media-action-btn">🔗 Open</a><button onclick="copyImageUrl('${url}')" class="media-action-btn">📋 Copy Link</button></div></div>`; }
+    if (/\.mp4(\?|$)/i.test(url)) { return `<div class="generated-media-wrap"><video controls autoplay style="max-width:100%;border-radius:8px;background:#000"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download MP4</a><a href="${url}" target="_blank" class="media-action-btn">🔗 Open</a><button onclick="copyImageUrl('${url}')" class="media-action-btn"> Copy Link</button></div></div>`; }
     return `<div class="generated-media-wrap"><img src="${url}" alt="${alt}" style="max-width:100%;border-radius:8px" onclick="window.open('${url}','_blank')"/><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download</a><a href="${url}" target="_blank" class="media-action-btn">🔍 Open Full Size</a><button onclick="copyImageUrl('${url}')" class="media-action-btn">📋 Copy Link</button></div></div>`;
   });
   h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
@@ -603,7 +594,7 @@ function refreshPreview() { writePreview(); }
 function downloadHtml() { if (!lastHtml) return; const a = document.createElement('a'); a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(lastHtml); a.download = 'ai-studio-output.html'; a.click(); }
 function showClonePreview(dir) {
   const body = document.getElementById('tool-panel-body'); const url = `/preview/${dir}/index.html`;
-  body.innerHTML += `<div style="margin-top:12px"><div style="display:flex;gap:6px;margin-bottom:8px"><button class="run-btn" style="flex:1" onclick="document.getElementById('clone-frame').src=document.getElementById('clone-frame').src">🔄</button><a href="${url}" target="_blank"><button class="run-btn" style="flex:1;background:var(--bg3);color:var(--text)"> Open</button></a></div><iframe id="clone-frame" src="${url}" style="width:100%;height:400px;border:1px solid var(--border);border-radius:8px"></iframe></div>`;
+  body.innerHTML += `<div style="margin-top:12px"><div style="display:flex;gap:6px;margin-bottom:8px"><button class="run-btn" style="flex:1" onclick="document.getElementById('clone-frame').src=document.getElementById('clone-frame').src">🔄</button><a href="${url}" target="_blank"><button class="run-btn" style="flex:1;background:var(--bg3);color:var(--text)">🔗 Open</button></a></div><iframe id="clone-frame" src="${url}" style="width:100%;height:400px;border:1px solid var(--border);border-radius:8px"></iframe></div>`;
 }
 
 function openTool(tool) {
@@ -613,7 +604,7 @@ function openTool(tool) {
   if (tool === 'chat') { closeTool(); return; }
   const panel = document.getElementById('tool-panel'); const body = document.getElementById('tool-panel-body');
   panel.classList.add('open');
-  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:'📋 Clone Website', image:' Image Generation', memory:'🧠 Memory', plugins:'🔌 Plugins', health:'❤️ Health Check' };
+  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:' Clone Website', image:'🎨 Image Generation', memory:'🧠 Memory', plugins:' Plugins', health:'❤️ Health Check' };
   document.getElementById('tool-panel-title').textContent = titles[tool] || tool;
   switch(tool) {
     case 'website': renderWebsiteTool(body); break; case 'code': renderCodeTool(body); break;
@@ -675,13 +666,13 @@ async function runAppGen() {
 }
 
 function renderCloneTool(body) {
-  body.innerHTML = `<div class="form-group"><label class="form-label">Website URL</label><input class="form-input" id="cl-url" placeholder="https://example.com"/></div><button class="run-btn" id="cl-btn" onclick="runClone()">📋 Clone Website</button><div id="cl-result"></div>`;
+  body.innerHTML = `<div class="form-group"><label class="form-label">Website URL</label><input class="form-input" id="cl-url" placeholder="https://example.com"/></div><button class="run-btn" id="cl-btn" onclick="runClone()"> Clone Website</button><div id="cl-result"></div>`;
 }
 async function runClone() {
   const url = document.getElementById('cl-url').value.trim(); if (!url) { toast('Enter a URL', 'error'); return; }
   setLoading('cl-btn', true, '⏳ Cloning…');
   const r = await fetch('/clone', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
-  const d = await r.json(); setLoading('cl-btn', false, ' Clone Website');
+  const d = await r.json(); setLoading('cl-btn', false, '📋 Clone Website');
   if (d.error) { showResult('cl-result', '❌ ' + d.error, 'error'); return; }
   showResult('cl-result', `✅ Cloned!\nSaved to: ${d.directory}`, 'success'); showClonePreview(d.directory);
 }
@@ -796,7 +787,7 @@ function exportChat(format) {
 
 function setLoading(btnId, loading, loadText) { const btn = document.getElementById(btnId); if (!btn) return; btn.disabled = loading; if (loading && loadText) btn.textContent = loadText; }
 function showResult(containerId, text, type) { const el = document.getElementById(containerId); if (!el) return; el.innerHTML = `<div class="result-box ${type||''}">${text}</div>`; }
-function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'ℹ️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
+function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
 function showModal(title, msg, buttons) {
   document.getElementById('modal-title').textContent = title; document.getElementById('modal-msg').textContent = msg;
   const actions = document.getElementById('modal-actions'); actions.innerHTML = '';
