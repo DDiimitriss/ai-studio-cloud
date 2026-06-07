@@ -21,6 +21,7 @@ import requests
 import importlib.util
 import base64
 import subprocess
+import shutil
 from datetime import datetime
 from flask import (Flask, render_template, request, jsonify,
 session, Response, stream_with_context, send_from_directory)
@@ -2086,7 +2087,44 @@ Style guide: {style_guide}
 # Entry point
 # =============================================================================
 
+# =============================================================================
+# NEW: Wipe All Memory Route
+# =============================================================================
+@app.route("/wipe_memory", methods=["POST"])
+def route_wipe_memory():
+    global chroma_client, memory_collection, _memory_ready
+    # Reset memory flags
+    _memory_ready = False
+    chroma_client = None
+    memory_collection = None
+    
+    # Delete ChromaDB directory
+    if os.path.exists(CHROMA_PATH):
+        shutil.rmtree(CHROMA_PATH)
+        os.makedirs(CHROMA_PATH, exist_ok=True)
+    
+    # Delete user profile
+    if os.path.exists(USER_PROFILE_PATH):
+        os.remove(USER_PROFILE_PATH)
+        
+    return jsonify({"status": "wiped", "message": "All memory and profile data permanently deleted."})
+
+
+# =============================================================================
+# Entry point
+# =============================================================================
+
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    print(f"\n{'='*62}")
+    print(f" AI Studio - Cloud Edition | v2.1 | 07 June 2026")
+    print(f" API key set : {'Yes' if OPENROUTER_API_KEY else 'No - set OPENROUTER_API_KEY'}")
+    print(f" Default model: {DEFAULT_TEXT_MODEL} (Laguna M.1)")
+    print(f" Text chain   : {' -> '.join(FREE_TEXT_MODELS)}")
+    print(f" Image chain  : {' -> '.join(IMAGE_MODELS)}")
+    print(f" Port         : {port}")
+    print(f"{'='*62}\n")
+    app.run(debug=False, host="0.0.0.0", port=port)
     port = int(os.environ.get("PORT", 5000))
     print(f"\n{'='*62}")
     print(f" AI Studio - Cloud Edition | v2.1 | 07 June 2026")

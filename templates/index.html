@@ -50,7 +50,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 #toggle-sidebar:hover{color:var(--text)}
 #topbar-title{font-weight:800;font-size:15px;letter-spacing:-.3px;flex:1}
 
-/* SMALLER DROPDOWN */
 #model-select {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -76,7 +75,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 #messages::-webkit-scrollbar-track{background:transparent}
 #messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:99px}
 
-/* NARROWER SPACE BETWEEN MESSAGES */
 .msg{display:flex;gap:14px;margin-bottom:14px;animation:fadeUp .25s ease}
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -85,7 +83,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
 .msg.ai .msg-avatar{background:var(--bg3);border:1px solid var(--border2)}
 .msg-body{flex:1;min-width:0}
 
-/* SMALLER ROLE LABEL */
 .msg-role{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
 
 .msg-content{background:var(--ai-bg);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;line-height:1.7;font-size:15px;word-break:break-word}
@@ -234,7 +231,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
 <div id="app">
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-icon"></div>
+      <div class="logo-icon">🧠</div>
       <div>
         <div class="logo-text">AI Studio Pro</div>
         <div class="logo-ver">v2.1 · Cloud</div>
@@ -255,6 +252,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
     <div class="sidebar-section">Preferences</div>
     <button class="sidebar-btn" onclick="toggleTheme()"><span class="icon" id="theme-icon">☀️</span> Toggle Theme</button>
     <button class="sidebar-btn" onclick="clearChatUI()"><span class="icon">🗑️</span> Clear Chat</button>
+    <button class="sidebar-btn" onclick="wipeMemory()"><span class="icon">🧨</span> Wipe All Memory</button>
     <div id="stats-bar">
       <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="stat-cpu">–</span><div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%"></div></div></div>
       <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="stat-ram">–</span><div class="bar-track"><div class="bar-fill" id="bar-ram" style="width:0%"></div></div></div>
@@ -267,7 +265,6 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
       <button id="toggle-sidebar" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
       <div id="topbar-title">Chat</div>
       
-      <!-- SMALLER DROPDOWN -->
       <select id="model-select" title="Select model"></select>
       
       <div style="position:relative">
@@ -283,7 +280,6 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
     <div id="panels">
       <div id="chat-panel">
         <div id="messages">
-          <!-- Clean start: No welcome message -->
         </div>
 
         <div id="input-area">
@@ -299,8 +295,8 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
             </div>
             <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach image">📎</button>
             <button id="enhance-btn" onclick="toggleImgEnhance()" title="Auto-enhance image prompts">✨</button>
-            <button id="voice-btn" onclick="toggleVoice()" title="Voice input"></button>
-            <button id="stop-btn" onclick="stopGeneration()" title="Stop"></button>
+            <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
+            <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
             <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
           </div>
           <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 📎 attach image &nbsp;·&nbsp; 🎤 voice</div>
@@ -326,6 +322,18 @@ let lastHtml = '', lastCode = '', statsInterval = null;
 let attachedImageB64 = null, attachedAspectRatio = '16:9';
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Load chat history from local storage
+  const saved = localStorage.getItem('chatHistory');
+  if (saved) {
+    try {
+      chatHistory = JSON.parse(saved);
+      chatHistory.forEach(msg => {
+        if (msg.role === 'user') addMsg('user', msg.content);
+        else addMsg('ai', msg.content);
+      });
+    } catch(e) { console.error('Failed to load chat history', e); }
+  }
+  
   loadModels();
   startStats();
   setupDragDrop();
@@ -333,6 +341,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupKeyboard();
   _syncEnhanceBtn();
 });
+
+function saveChatHistory() {
+  localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+}
 
 const MODEL_LABELS = {
   'poolside/laguna-m.1:free': 'Laguna M.1 (free) — Agentic Beast',
@@ -433,6 +445,8 @@ async function sendMessage() {
   inp.value = ''; inp.style.height = 'auto';
   addMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
+  saveChatHistory(); // SAVE HERE
+  
   const model = getModel();
   isGenerating = true;
   document.getElementById('stop-btn').classList.add('visible');
@@ -451,6 +465,7 @@ async function sendMessage() {
         const md = `🎬 **Image-to-video complete** (${dur}s · ~$${cost})\n\n![video](${data.video_url})`;
         const el = addMsg('ai', md);
         chatHistory.push({ role: 'assistant', content: md });
+        saveChatHistory(); // SAVE HERE
       }
     } catch(err) { removeTyping(typingId); addMsg('ai', `❌ Error: ${err.message}`); }
     doneGenerating(null); return;
@@ -470,7 +485,7 @@ async function sendMessage() {
         (stepsDiv || document.getElementById('messages')).appendChild(w); scrollBottom(); return;
       }
       if (d.cost_notice) {
-        const cn = document.createElement('div'); cn.style.cssText = 'font-size:11px;color:#f59e0b;padding:2px 8px;margin-bottom:4px'; cn.textContent = ' ' + d.cost_notice;
+        const cn = document.createElement('div'); cn.style.cssText = 'font-size:11px;color:#f59e0b;padding:2px 8px;margin-bottom:4px'; cn.textContent = '💳 ' + d.cost_notice;
         (stepsDiv || document.getElementById('messages')).appendChild(cn); scrollBottom(); return;
       }
       if (d.chain_summary) {
@@ -497,7 +512,8 @@ async function sendMessage() {
       if (d.done) {
         if (aiText) {
           chatHistory.push({ role: 'assistant', content: aiText });
-          // ALWAYS show the model label next to action buttons
+          saveChatHistory(); // SAVE HERE
+          
           if (!_streamMsgEl) {
             _streamMsgEl = createMsgEl('ai', '');
             document.getElementById('messages').appendChild(_streamMsgEl);
@@ -524,18 +540,28 @@ function updateStreamMsg(id, text, stepsDiv) {
   const content = _streamMsgEl.querySelector('.msg-content'); content.innerHTML = renderMarkdown(text); scrollBottom();
 }
 function doneGenerating(es) { if (es) es.close(); currentStream = null; isGenerating = false; _streamMsgEl = null; document.getElementById('stop-btn').classList.remove('visible'); document.getElementById('send-btn').style.opacity = '1'; }
-function stopGeneration() { if (currentStream) { currentStream.close(); } doneGenerating(null); addMsg('ai', '⏹ Generation stopped.'); }
+
+function stopGeneration() { 
+  if (currentStream) { currentStream.close(); } 
+  doneGenerating(null); 
+  
+  if (_streamMsgEl) {
+    const content = _streamMsgEl.querySelector('.msg-content');
+    content.innerHTML += '<br><br><span style="color:var(--muted); font-size:12px; font-style:italic;">⏹ Generation stopped.</span>';
+    _streamMsgEl = null; 
+  } else {
+    addMsg('ai', '⏹ Generation stopped.'); 
+  }
+}
 
 function addMsg(role, text) { const el = createMsgEl(role, text); document.getElementById('messages').appendChild(el); scrollBottom(); return el; }
 
-// NEW AVATAR:  instead of 🤖
 function createMsgEl(role, text) {
   const div = document.createElement('div'); div.className = `msg ${role}`;
-  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🧠'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)">📋 Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()"> Preview</button>' : ''}</div></div>`;
+  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🧠'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)">📋 Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()">👁 Preview</button>' : ''}</div></div>`;
   return div;
 }
 
-// NEW AVATAR: 🧠 instead of 🤖
 function addTyping() {
   const id = 'typing-' + Date.now(); const div = document.createElement('div'); div.className = 'msg ai'; div.id = id;
   div.innerHTML = `<div class="msg-avatar">🧠</div><div class="msg-body"><div class="msg-role">AI Studio Pro</div><div class="msg-content"><div class="typing-dots"><span></span><span></span><span></span></div></div></div>`;
@@ -557,7 +583,7 @@ function renderMarkdown(text) {
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); h = h.replace(/\*([^*]+)\*/g, '<em>$1</em>');
   h = h.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\)]+)\)/g, (_, alt, url) => {
     const filename = url.split('/').pop().split('?')[0] || 'media';
-    if (/\.mp4(\?|$)/i.test(url)) { return `<div class="generated-media-wrap"><video controls autoplay style="max-width:100%;border-radius:8px;background:#000"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download MP4</a><a href="${url}" target="_blank" class="media-action-btn">🔗 Open</a><button onclick="copyImageUrl('${url}')" class="media-action-btn"> Copy Link</button></div></div>`; }
+    if (/\.mp4(\?|$)/i.test(url)) { return `<div class="generated-media-wrap"><video controls autoplay style="max-width:100%;border-radius:8px;background:#000"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download MP4</a><a href="${url}" target="_blank" class="media-action-btn">🔗 Open</a><button onclick="copyImageUrl('${url}')" class="media-action-btn">📋 Copy Link</button></div></div>`; }
     return `<div class="generated-media-wrap"><img src="${url}" alt="${alt}" style="max-width:100%;border-radius:8px" onclick="window.open('${url}','_blank')"/><div class="media-actions"><a href="${url}" download="${filename}" class="media-action-btn">⬇ Download</a><a href="${url}" target="_blank" class="media-action-btn">🔍 Open Full Size</a><button onclick="copyImageUrl('${url}')" class="media-action-btn">📋 Copy Link</button></div></div>`;
   });
   h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
@@ -604,7 +630,7 @@ function openTool(tool) {
   if (tool === 'chat') { closeTool(); return; }
   const panel = document.getElementById('tool-panel'); const body = document.getElementById('tool-panel-body');
   panel.classList.add('open');
-  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:' Clone Website', image:'🎨 Image Generation', memory:'🧠 Memory', plugins:' Plugins', health:'❤️ Health Check' };
+  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:'📋 Clone Website', image:'🎨 Image Generation', memory:'🧠 Memory', plugins:'🔌 Plugins', health:'❤️ Health Check' };
   document.getElementById('tool-panel-title').textContent = titles[tool] || tool;
   switch(tool) {
     case 'website': renderWebsiteTool(body); break; case 'code': renderCodeTool(body); break;
@@ -666,7 +692,7 @@ async function runAppGen() {
 }
 
 function renderCloneTool(body) {
-  body.innerHTML = `<div class="form-group"><label class="form-label">Website URL</label><input class="form-input" id="cl-url" placeholder="https://example.com"/></div><button class="run-btn" id="cl-btn" onclick="runClone()"> Clone Website</button><div id="cl-result"></div>`;
+  body.innerHTML = `<div class="form-group"><label class="form-label">Website URL</label><input class="form-input" id="cl-url" placeholder="https://example.com"/></div><button class="run-btn" id="cl-btn" onclick="runClone()">📋 Clone Website</button><div id="cl-result"></div>`;
 }
 async function runClone() {
   const url = document.getElementById('cl-url').value.trim(); if (!url) { toast('Enter a URL', 'error'); return; }
@@ -685,7 +711,7 @@ async function runImageGen() {
   setLoading('ig-btn', true, '🎨 Generating…');
   const r = await fetch('/gemini_image', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt }) });
   const d = await r.json(); setLoading('ig-btn', false, '🎨 Generate Image');
-  if (d.error) { showResult('ig-result', ' ' + d.error, 'error'); return; }
+  if (d.error) { showResult('ig-result', '❌ ' + d.error, 'error'); return; }
   const res = document.getElementById('ig-result');
   res.innerHTML = `<div class="result-box success">✅ Generated!</div><img src="/${d.path.replace(/\\/g,'/')}" style="width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--border)"/><a href="/${d.path.replace(/\\/g,'/')}" download><button class="run-btn" style="margin-top:8px">⬇ Download</button></a>`;
 }
@@ -733,10 +759,30 @@ async function renderHealthTool(body) {
 
 let darkMode = true;
 function toggleTheme() { darkMode = !darkMode; document.body.classList.toggle('light', !darkMode); document.getElementById('theme-icon').textContent = darkMode ? '☀️' : '🌙'; }
+
 function clearChatUI() {
   showModal('Clear Chat', 'Clear the conversation history?', [
     { label:'Cancel', cls:'modal-btn' },
-    { label:'Clear', cls:'modal-btn danger', action: async () => { await fetch('/clear_chat', { method:'POST' }); document.getElementById('messages').innerHTML = ''; chatHistory = []; toast('Chat cleared', 'success'); }}
+    { label:'Clear', cls:'modal-btn danger', action: async () => { 
+        await fetch('/clear_chat', { method:'POST' }); 
+        localStorage.removeItem('chatHistory');
+        document.getElementById('messages').innerHTML = ''; 
+        chatHistory = []; 
+        toast('Chat cleared', 'success'); 
+    }}
+  ]);
+}
+
+async function wipeMemory() {
+  showModal('Wipe All Memory', 'This will permanently delete all learned facts, chat history, and profile data. This cannot be undone.', [
+    { label:'Cancel', cls:'modal-btn' },
+    { label:'Wipe Everything', cls:'modal-btn danger', action: async () => { 
+        await fetch('/wipe_memory', { method:'POST' }); 
+        localStorage.removeItem('chatHistory');
+        document.getElementById('messages').innerHTML = ''; 
+        chatHistory = []; 
+        toast('All memory and chat history wiped!', 'success'); 
+    }}
   ]);
 }
 
@@ -787,7 +833,7 @@ function exportChat(format) {
 
 function setLoading(btnId, loading, loadText) { const btn = document.getElementById(btnId); if (!btn) return; btn.disabled = loading; if (loading && loadText) btn.textContent = loadText; }
 function showResult(containerId, text, type) { const el = document.getElementById(containerId); if (!el) return; el.innerHTML = `<div class="result-box ${type||''}">${text}</div>`; }
-function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
+function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'ℹ️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
 function showModal(title, msg, buttons) {
   document.getElementById('modal-title').textContent = title; document.getElementById('modal-msg').textContent = msg;
   const actions = document.getElementById('modal-actions'); actions.innerHTML = '';
