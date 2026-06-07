@@ -219,8 +219,8 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
       </div>
     </div>
     <div class="sidebar-section">Tools</div>
-    <button class="sidebar-btn active" onclick="openTool('chat')" id="btn-chat"><span class="icon">💬</span> Chat</button>
-    <button class="sidebar-btn" onclick="openTool('website')" id="btn-website"><span class="icon">🌐</span> Website Generator</button>
+    <button class="sidebar-btn active" onclick="openTool('chat')" id="btn-chat"><span class="icon"></span> Chat</button>
+    <button class="sidebar-btn" onclick="openTool('website')" id="btn-website"><span class="icon"></span> Website Generator</button>
     <button class="sidebar-btn" onclick="openTool('code')" id="btn-code"><span class="icon">💻</span> Code Tools</button>
     <button class="sidebar-btn" onclick="openTool('search')" id="btn-search"><span class="icon">🔍</span> Web Search</button>
     <button class="sidebar-btn" onclick="openTool('appgen')" id="btn-appgen"><span class="icon">⚙️</span> App Generator</button>
@@ -232,7 +232,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
     <button class="sidebar-btn" onclick="openTool('health')" id="btn-health"><span class="icon">❤️</span> Health Check</button>
     <div class="sidebar-section">Preferences</div>
     <button class="sidebar-btn" onclick="toggleTheme()"><span class="icon" id="theme-icon">☀️</span> Toggle Theme</button>
-    <button class="sidebar-btn" onclick="clearChatUI()"><span class="icon">️</span> Clear Chat</button>
+    <button class="sidebar-btn" onclick="clearChatUI()"><span class="icon">🗑️</span> Clear Chat</button>
     <div id="stats-bar">
       <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="stat-cpu">–</span><div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%"></div></div></div>
       <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="stat-ram">–</span><div class="bar-track"><div class="bar-fill" id="bar-ram" style="width:0%"></div></div></div>
@@ -246,7 +246,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
       <div id="topbar-title">Chat</div>
       <select id="model-select" title="Select model"></select>
       <div style="position:relative">
-        <button class="topbar-btn" onclick="toggleExportMenu()"> Export</button>
+        <button class="topbar-btn" onclick="toggleExportMenu()">⬇ Export</button>
         <div id="export-menu">
           <div class="export-item" onclick="exportChat('json')">📄 Export JSON</div>
           <div class="export-item" onclick="exportChat('md')">📝 Export Markdown</div>
@@ -258,7 +258,7 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
     <div id="panels">
       <div id="chat-panel">
         <div id="messages">
-          <!-- Welcome message removed for a clean start -->
+          <!-- Clean start: No welcome message -->
         </div>
 
         <div id="input-area">
@@ -272,10 +272,10 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
             <div class="input-field-wrap">
               <textarea id="user-input" placeholder="Message AI Studio Pro… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
             </div>
-            <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach image"></button>
+            <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach image">📎</button>
             <button id="enhance-btn" onclick="toggleImgEnhance()" title="Auto-enhance image prompts">✨</button>
-            <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
-            <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
+            <button id="voice-btn" onclick="toggleVoice()" title="Voice input"></button>
+            <button id="stop-btn" onclick="stopGeneration()" title="Stop"></button>
             <button id="send-btn" onclick="sendMessage()" title="Send">➤</button>
           </div>
           <div class="input-hint">Enter ↵ send &nbsp;·&nbsp; Shift+Enter new line &nbsp;·&nbsp; 📎 attach image &nbsp;·&nbsp; 🎤 voice</div>
@@ -311,13 +311,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 const MODEL_LABELS = {
+  'poolside/laguna-m.1:free': 'Laguna M.1 (free) — Agentic Coding Beast',
   'meta-llama/llama-4-scout:free': 'Llama 4 Scout (free) — fast',
   'meta-llama/llama-4-maverick:free': 'Llama 4 Maverick (free) — vision',
   'deepseek/deepseek-v3:free': 'DeepSeek V3 (free) — reasoning',
   'deepseek/deepseek-v4-flash:free': 'DeepSeek V4 Flash (free)',
   'openai/gpt-oss-120b:free': 'GPT-OSS 120B (free)',
-  'qwen/qwen3.6-plus': 'Qwen 3.6 Plus — most powerful',
-  'qwen/qwen3.6-flash': 'Qwen 3.6 Flash — fast',
 };
 
 async function loadModels() {
@@ -335,7 +334,10 @@ async function loadModels() {
       o.textContent = MODEL_LABELS[m] || m.split('/').pop();
       sel.appendChild(o);
     });
-    if (data.models.includes('qwen/qwen3.6-plus')) sel.value = 'qwen/qwen3.6-plus';
+    // Default to Laguna M.1 if available, as it's the best for tools
+    if (data.models.includes('poolside/laguna-m.1:free')) {
+      sel.value = 'poolside/laguna-m.1:free';
+    }
   } catch(e) { console.warn('Could not load models', e); }
 }
 function getModel() { return document.getElementById('model-select').value || 'meta-llama/llama-4-scout:free'; }
@@ -404,10 +406,10 @@ async function sendMessage() {
       const resp = await fetch('/generate_video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: msg, image: imgB64, aspect_ratio: aratio }) });
       const data = await resp.json();
       removeTyping(typingId);
-      if (data.error) { addMsg('ai', ` ${data.error}`); } 
+      if (data.error) { addMsg('ai', `❌ ${data.error}`); } 
       else {
         const dur = data.duration || '?'; const cost = data.cost || '?';
-        const md = ` **Image-to-video complete** (${dur}s · ~$${cost})\n\n![video](${data.video_url})`;
+        const md = `🎬 **Image-to-video complete** (${dur}s · ~$${cost})\n\n![video](${data.video_url})`;
         const el = addMsg('ai', md);
         chatHistory.push({ role: 'assistant', content: md });
       }
@@ -474,12 +476,12 @@ function updateStreamMsg(id, text, stepsDiv) {
   const content = _streamMsgEl.querySelector('.msg-content'); content.innerHTML = renderMarkdown(text); scrollBottom();
 }
 function doneGenerating(es) { if (es) es.close(); currentStream = null; isGenerating = false; _streamMsgEl = null; document.getElementById('stop-btn').classList.remove('visible'); document.getElementById('send-btn').style.opacity = '1'; }
-function stopGeneration() { if (currentStream) { currentStream.close(); } doneGenerating(null); addMsg('ai', ' Generation stopped.'); }
+function stopGeneration() { if (currentStream) { currentStream.close(); } doneGenerating(null); addMsg('ai', '⏹ Generation stopped.'); }
 
 function addMsg(role, text) { const el = createMsgEl(role, text); document.getElementById('messages').appendChild(el); scrollBottom(); return el; }
 function createMsgEl(role, text) {
   const div = document.createElement('div'); div.className = `msg ${role}`;
-  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)">📋 Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()"> Preview</button>' : ''}</div></div>`;
+  div.innerHTML = `<div class="msg-avatar">${role === 'user' ? '👤' : '🤖'}</div><div class="msg-body"><div class="msg-role">${role === 'user' ? 'You' : 'AI Studio Pro'}</div><div class="msg-content">${renderMarkdown(text)}</div><div class="msg-actions"><button class="msg-action-btn" onclick="copyMsg(this)"> Copy</button>${role === 'ai' ? '<button class="msg-action-btn" onclick="speakMsg(this)">🔊 Speak</button>' : ''}${role === 'ai' && lastHtml ? '<button class="msg-action-btn" onclick="previewLastHtml()">👁 Preview</button>' : ''}</div></div>`;
   return div;
 }
 function addTyping() {
@@ -550,7 +552,7 @@ function openTool(tool) {
   if (tool === 'chat') { closeTool(); return; }
   const panel = document.getElementById('tool-panel'); const body = document.getElementById('tool-panel-body');
   panel.classList.add('open');
-  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:'📋 Clone Website', image:' Image Generation', memory:'🧠 Memory', plugins:'🔌 Plugins', health:'❤️ Health Check' };
+  const titles = { website:'🌐 Website Generator', code:'💻 Code Tools', search:'🔍 Web Search', appgen:'⚙️ App Generator', clone:' Clone Website', image:'🎨 Image Generation', memory:'🧠 Memory', plugins:'🔌 Plugins', health:'❤️ Health Check' };
   document.getElementById('tool-panel-title').textContent = titles[tool] || tool;
   switch(tool) {
     case 'website': renderWebsiteTool(body); break; case 'code': renderCodeTool(body); break;
@@ -576,18 +578,18 @@ async function runWebsite() {
 }
 
 function renderCodeTool(body) {
-  body.innerHTML = `<div class="form-group"><label class="form-label">Your Code</label><textarea class="form-textarea" id="ct-code" style="min-height:120px;font-family:var(--font-mono);font-size:12px" placeholder="Paste your code here..."></textarea></div><button class="run-btn" onclick="runCodeToHtml()"> To HTML Page</button><div id="ct-result"></div>`;
+  body.innerHTML = `<div class="form-group"><label class="form-label">Your Code</label><textarea class="form-textarea" id="ct-code" style="min-height:120px;font-family:var(--font-mono);font-size:12px" placeholder="Paste your code here..."></textarea></div><button class="run-btn" onclick="runCodeToHtml()">🌐 To HTML Page</button><div id="ct-result"></div>`;
 }
 async function runCodeToHtml() {
   const code = document.getElementById('ct-code').value.trim(); if (!code) { toast('Paste some code first', 'error'); return; }
   const r = await fetch('/convert_code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ code, model: getModel() }) });
   const d = await r.json(); if (d.error) { showResult('ct-result', '❌ ' + d.error, 'error'); return; }
   lastHtml = d.html; showResult('ct-result', '✅ HTML generated!', 'success');
-  document.getElementById('ct-result').innerHTML += `<button class="run-btn" style="margin-top:8px" onclick="previewLastHtml()">👁 Preview</button>`;
+  document.getElementById('ct-result').innerHTML += `<button class="run-btn" style="margin-top:8px" onclick="previewLastHtml()"> Preview</button>`;
 }
 
 function renderSearchTool(body) {
-  body.innerHTML = `<div class="form-group"><label class="form-label">Search Query</label><input class="form-input" id="st-query" placeholder="Latest AI news 2026..."/></div><button class="run-btn" id="st-btn" onclick="runSearch()">🔍 Search</button><div id="st-result"></div>`;
+  body.innerHTML = `<div class="form-group"><label class="form-label">Search Query</label><input class="form-input" id="st-query" placeholder="Latest AI news 2026..."/></div><button class="run-btn" id="st-btn" onclick="runSearch()"> Search</button><div id="st-result"></div>`;
   document.getElementById('st-query').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
 }
 async function runSearch() {
@@ -600,7 +602,7 @@ async function runSearch() {
 }
 
 function renderAppGenTool(body) {
-  body.innerHTML = `<div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="ag-desc" placeholder="A script that monitors CPU usage..."></textarea></div><div class="form-group"><label class="form-label">Language</label><select class="form-select" id="ag-lang"><option value="python">Python</option><option value="powershell">PowerShell</option><option value="bash">Bash</option></select></div><button class="run-btn" id="ag-btn" onclick="runAppGen()">️ Generate App</button><div id="ag-result"></div>`;
+  body.innerHTML = `<div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="ag-desc" placeholder="A script that monitors CPU usage..."></textarea></div><div class="form-group"><label class="form-label">Language</label><select class="form-select" id="ag-lang"><option value="python">Python</option><option value="powershell">PowerShell</option><option value="bash">Bash</option></select></div><button class="run-btn" id="ag-btn" onclick="runAppGen()">⚙️ Generate App</button><div id="ag-result"></div>`;
 }
 async function runAppGen() {
   const desc = document.getElementById('ag-desc').value.trim(); if (!desc) { toast('Please describe the app', 'error'); return; }
@@ -616,7 +618,7 @@ function renderCloneTool(body) {
 }
 async function runClone() {
   const url = document.getElementById('cl-url').value.trim(); if (!url) { toast('Enter a URL', 'error'); return; }
-  setLoading('cl-btn', true, '⏳ Cloning…');
+  setLoading('cl-btn', true, ' Cloning…');
   const r = await fetch('/clone', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
   const d = await r.json(); setLoading('cl-btn', false, '📋 Clone Website');
   if (d.error) { showResult('cl-result', '❌ ' + d.error, 'error'); return; }
@@ -633,7 +635,7 @@ async function runImageGen() {
   const d = await r.json(); setLoading('ig-btn', false, '🎨 Generate Image');
   if (d.error) { showResult('ig-result', '❌ ' + d.error, 'error'); return; }
   const res = document.getElementById('ig-result');
-  res.innerHTML = `<div class="result-box success">✅ Generated!</div><img src="/${d.path.replace(/\\/g,'/')}" style="width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--border)"/><a href="/${d.path.replace(/\\/g,'/')}" download><button class="run-btn" style="margin-top:8px">⬇ Download</button></a>`;
+  res.innerHTML = `<div class="result-box success">✅ Generated!</div><img src="/${d.path.replace(/\\/g,'/')}" style="width:100%;border-radius:8px;margin-top:10px;border:1px solid var(--border)"/><a href="/${d.path.replace(/\\/g,'/')}" download><button class="run-btn" style="margin-top:8px"> Download</button></a>`;
 }
 
 async function renderMemoryTool(body) {
@@ -656,7 +658,7 @@ async function renderPluginsTool(body) {
   body.innerHTML = '<div style="color:var(--muted);font-size:13px">Loading plugins…</div>';
   const r = await fetch('/list_plugins'); const d = await r.json(); const plugins = d.plugins || {};
   if (!Object.keys(plugins).length) { body.innerHTML = '<div style="color:var(--muted);font-size:13px">No plugins installed.</div>'; return; }
-  body.innerHTML = Object.entries(plugins).map(([key, info]) => `<div class="plugin-card"><div><div class="plugin-name">🔌 ${info.name || key}</div><div class="plugin-desc">${info.description || ''}</div></div><button class="plugin-run" onclick="runPluginPrompt('${key}','${(info.name||key).replace(/'/g,"\\'")}')">Run</button></div>`).join('');
+  body.innerHTML = Object.entries(plugins).map(([key, info]) => `<div class="plugin-card"><div><div class="plugin-name"> ${info.name || key}</div><div class="plugin-desc">${info.description || ''}</div></div><button class="plugin-run" onclick="runPluginPrompt('${key}','${(info.name||key).replace(/'/g,"\\'")}')">Run</button></div>`).join('');
 }
 function runPluginPrompt(key, name) { document.getElementById('user-input').value = `Use the ${name} plugin`; sendMessage(); closeTool(); }
 
@@ -668,17 +670,17 @@ async function renderHealthTool(body) {
     const d = await r.json();
     const keyOk = d.api_key_set;
     body.innerHTML = `
-      <div class="health-row"><div class="dot ${keyOk ? 'green' : 'red'}"></div><div>${keyOk ? '✅ API Key set' : '❌ API Key missing'}</div></div>
+      <div class="health-row"><div class="dot ${keyOk ? 'green' : 'red'}"></div><div>${keyOk ? '✅ API Key set' : ' API Key missing'}</div></div>
       <div class="health-row"><div class="dot green"></div><div>Server running</div></div>
       <div style="margin-top:14px"><div class="form-label" style="margin-bottom:8px">Text Model Chain</div>${(d.text_model_chain || [d.default_text_model]).map((m,i) => `<div class="health-row"><div class="dot ${i===0?'green':'amber'}"></div><div style="font-family:var(--font-mono);font-size:11px">${m}</div></div>`).join('')}</div>
       <button class="run-btn" style="margin-top:16px" onclick="renderHealthTool(document.getElementById('tool-panel-body'))">🔄 Refresh</button>`;
   } catch(e) {
-    body.innerHTML = `<div class="health-row"><div class="dot red"></div><div>❌ Cannot reach server: ${e.message}</div></div><button class="run-btn" style="margin-top:16px" onclick="renderHealthTool(document.getElementById('tool-panel-body'))">🔄 Retry</button>`;
+    body.innerHTML = `<div class="health-row"><div class="dot red"></div><div>❌ Cannot reach server: ${e.message}</div></div><button class="run-btn" style="margin-top:16px" onclick="renderHealthTool(document.getElementById('tool-panel-body'))"> Retry</button>`;
   }
 }
 
 let darkMode = true;
-function toggleTheme() { darkMode = !darkMode; document.body.classList.toggle('light', !darkMode); document.getElementById('theme-icon').textContent = darkMode ? '️' : '🌙'; }
+function toggleTheme() { darkMode = !darkMode; document.body.classList.toggle('light', !darkMode); document.getElementById('theme-icon').textContent = darkMode ? '☀️' : '🌙'; }
 function clearChatUI() {
   showModal('Clear Chat', 'Clear the conversation history?', [
     { label:'Cancel', cls:'modal-btn' },
@@ -733,7 +735,7 @@ function exportChat(format) {
 
 function setLoading(btnId, loading, loadText) { const btn = document.getElementById(btnId); if (!btn) return; btn.disabled = loading; if (loading && loadText) btn.textContent = loadText; }
 function showResult(containerId, text, type) { const el = document.getElementById(containerId); if (!el) return; el.innerHTML = `<div class="result-box ${type||''}">${text}</div>`; }
-function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'ℹ️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
+function toast(msg, type) { const c = document.getElementById('toast-container'); const div = document.createElement('div'); div.className = `toast ${type||''}`; div.innerHTML = `${type==='success'?'✅':type==='error'?'❌':'️'} ${msg}`; c.appendChild(div); setTimeout(() => div.remove(), 3500); }
 function showModal(title, msg, buttons) {
   document.getElementById('modal-title').textContent = title; document.getElementById('modal-msg').textContent = msg;
   const actions = document.getElementById('modal-actions'); actions.innerHTML = '';
