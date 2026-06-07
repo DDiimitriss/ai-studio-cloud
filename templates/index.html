@@ -327,10 +327,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (saved) {
     try {
       chatHistory = JSON.parse(saved);
-      chatHistory.forEach(msg => {
-        if (msg.role === 'user') addMsg('user', msg.content);
-        else addMsg('ai', msg.content);
-      });
+     chatHistory.forEach(msg => {
+  // ONLY load if there is actual text content!
+  if (msg.content && msg.content.trim()) {
+    if (msg.role === 'user') addMsg('user', msg.content);
+    else addMsg('ai', msg.content);
+  }
+});
     } catch(e) { console.error('Failed to load chat history', e); }
   }
   
