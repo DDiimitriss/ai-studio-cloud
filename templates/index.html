@@ -288,12 +288,12 @@ model-viewer{width:100%;height:400px;border-radius:8px;margin:10px 0;border:1px 
             <span id="attach-label">No image</span>
             <button id="attach-remove" onclick="clearAttachment()" title="Remove image">✕</button>
           </div>
-          <input type="file" id="attach-file-input" accept="image/*" style="display:none" onchange="handleAttachFile(this)"/>
+          <input type="file" id="attach-file-input" accept="image/*,.pdf" style="display:none" onchange="handleAttachFile(this)"/>
           <div id="input-wrap">
             <div class="input-field-wrap">
               <textarea id="user-input" placeholder="Message AI Studio Pro… (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
             </div>
-            <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach image">📎</button>
+            <button id="attach-btn" onclick="document.getElementById('attach-file-input').click()" title="Attach file (image or PDF)">📎</button>
             <button id="enhance-btn" onclick="toggleImgEnhance()" title="Auto-enhance image prompts">✨</button>
             <button id="voice-btn" onclick="toggleVoice()" title="Voice input">🎤</button>
             <button id="stop-btn" onclick="stopGeneration()" title="Stop">⏹</button>
@@ -417,7 +417,21 @@ function isVideoRequest(msg) { const lower = msg.toLowerCase(); const kws = ['ge
 function handleAttachFile(input) {
   const file = input.files[0];
   if (!file) return;
-  if (file.size > 8 * 1024 * 1024) { toast('Image too large — please use an image under 8 MB', 'error'); input.value = ''; return; }
+  
+  // Check if it's a PDF
+  if (file.name.toLowerCase().endsWith('.pdf')) {
+    handlePdfUpload(file);
+    input.value = '';
+    return;
+  }
+  
+  // Otherwise, treat it as an image
+  if (file.size > 8 * 1024 * 1024) { 
+    toast('Image too large — please use an image under 8 MB', 'error'); 
+    input.value = ''; 
+    return; 
+  }
+  
   const reader = new FileReader();
   reader.onload = () => {
     attachedImageB64 = reader.result;
@@ -433,7 +447,47 @@ function handleAttachFile(input) {
   reader.readAsDataURL(file);
   input.value = '';
 }
-function clearAttachment() {
+
+async function handlePdfUpload(file) {
+  if (file.size > 20 * 1024 * 1024) { 
+    toast('PDF too large — please use a PDF under 20 MB', 'error'); 
+    return; 
+  }
+  
+  toast('Uploading and extracting text from PDF...', 'info');
+  
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  try {
+    const response = await fetch('/upload_pdf', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      toast(`Error: ${data.error}`, 'error');
+      return;
+    }
+    
+    // Store the extracted text
+    window.extractedPdfText = data.text;
+    window.extractedPdfFilename = data.filename;
+    
+    // Show preview
+    document.getElementById('attach-thumb').src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iMzYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjM2IiBoZWlnaHQ9IjM2IiBmaWxsPSIjZWY0NDQ0Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5QREY8L3RleHQ+PC9zdmc+';
+    document.getElementById('attach-label').textContent = `${data.filename} (${data.pages} pages)`;
+    document.getElementById('attach-preview').classList.add('visible');
+    document.getElementById('attach-btn').classList.add('has-image');
+    
+    toast(`✅ PDF uploaded! ${data.pages} pages extracted. Ask me anything about it!`, 'success');
+    
+  } catch (error) {
+    toast(`Failed to upload PDF: ${error.message}`, 'error');
+  }
+}function clearAttachment() {
   attachedImageB64 = null; attachedAspectRatio = '16:9';
   document.getElementById('attach-thumb').src = '';
   document.getElementById('attach-label').textContent = '';
@@ -444,6 +498,14 @@ function clearAttachment() {
 async function sendMessage() {
   const inp = document.getElementById('user-input');
   const msg = inp.value.trim();
+// Check if we have PDF text to include
+let messageWithPdf = msg;
+if (window.extractedPdfText && msg.trim()) {
+  messageWithPdf = `[PDF Content from ${window.extractedPdfFilename}]:\n\n${window.extractedPdfText}\n\n---\n\nUser Question: ${msg}`;
+  // Clear the PDF text after using it once
+  window.extractedPdfText = null;
+  window.extractedPdfFilename = null;
+}
   if (!msg || isGenerating) return;
   inp.value = ''; inp.style.height = 'auto';
   addMsg('user', msg);
@@ -475,7 +537,7 @@ async function sendMessage() {
   }
 
   try {
-    const url = `/stream_smart_agent?request=${encodeURIComponent(msg)}&model=${encodeURIComponent(model)}&img_enhance=${imgEnhanceOn}`;
+    const url = `/stream_smart_agent?request=${encodeURIComponent(messageWithPdf)}&model=${encodeURIComponent(model)}&img_enhance=${imgEnhanceOn}`;On}`;
     const es = new EventSource(url);
     currentStream = es;
     let aiText = '', steps = [], stepsDiv = null;

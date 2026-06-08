@@ -2113,7 +2113,57 @@ def route_wipe_memory():
 # =============================================================================
 # Entry point
 # =============================================================================
+# =============================================================================
+# PDF Upload & Text Extraction
+# =============================================================================
 
+@app.route("/upload_pdf", methods=["POST"])
+def upload_pdf():
+    try:
+        import PyPDF2
+        
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+        
+        if not file.filename.lower().endswith(".pdf"):
+            return jsonify({"error": "Only PDF files are supported"}), 400
+        
+        # Save the file temporarily
+        filename = f"uploaded_{int(time.time())}.pdf"
+        filepath = os.path.join("static", "generated", filename)
+        file.save(filepath)
+        
+        # Extract text from PDF
+        text_content = ""
+        with open(filepath, "rb") as pdf_file:
+            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            num_pages = len(pdf_reader.pages)
+            
+            for page_num in range(num_pages):
+                page = pdf_reader.pages[page_num]
+                text_content += page.extract_text() + "\n\n"
+        
+        # Limit text to first 5000 characters to avoid overwhelming the AI
+        if len(text_content) > 5000:
+            text_content = text_content[:5000] + "\n\n[... Content truncated for length ...]"
+        
+        # Clean up the file (optional - keep it if you want to download later)
+        # os.remove(filepath)
+        
+        return jsonify({
+            "success": True,
+            "filename": file.filename,
+            "pages": num_pages,
+            "text": text_content,
+            "filepath": filepath
+        })
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"\n{'='*62}")
